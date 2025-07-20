@@ -12,5 +12,5 @@ arq==0.25.0
 cryptography
 python-dotenv
 greenlet
-
+psycopg2-binary
 # celery==5.3.4 # альтернатива ARQ
