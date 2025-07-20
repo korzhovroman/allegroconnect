@@ -1,5 +1,6 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from models.models import User
 from schemas.user import UserCreate
 from utils.auth import get_password_hash, verify_password
@@ -15,7 +16,7 @@ class UserService:
         if result.scalar_one_or_none():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Email already registered"  # Исправлена кавычка
+                detail="Email already registered"
             )
 
         # Создание пользователя
@@ -27,9 +28,18 @@ class UserService:
 
         db.add(db_user)
         await db.commit()
-        await db.refresh(db_user)
+        # НЕ ДЕЛАЕМ refresh, так как он не загрузит связи.
+        # Вместо этого мы заново запросим пользователя с нужными связями.
 
-        return db_user
+        # Запрашиваем созданного пользователя еще раз, но с "жадной загрузкой"
+        result = await db.execute(
+            select(User)
+            .options(selectinload(User.allegro_accounts)) # <--- ВОТ КЛЮЧЕВОЕ ИЗМЕНЕНИЕ
+            .filter(User.id == db_user.id)
+        )
+
+        created_user_with_relations = result.scalar_one()
+        return created_user_with_relations
 
     @staticmethod
     async def authenticate_user(db: AsyncSession, email: str, password: str) -> User:
