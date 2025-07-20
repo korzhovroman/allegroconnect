@@ -2,7 +2,7 @@ fastapi==0.104.1
 uvicorn[standard]==0.24.0
 sqlalchemy==2.0.23
 asyncpg
-alembic==1.12.1
+alembic
 pydantic[email]
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
@@ -10,5 +10,7 @@ python-multipart==0.0.6
 httpx==0.25.2
 arq==0.25.0
 cryptography
+python-dotenv
+greenlet
 
 # celery==5.3.4 # альтернатива ARQ
