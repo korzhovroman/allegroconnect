@@ -1,22 +1,29 @@
-from dotenv import load_dotenv
-load_dotenv()
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 from typing import AsyncGenerator
-import os
 
-DATABASE_URL = os.getenv("DATABASE_URL")
+# 1. Импортируем наш центральный объект настроек
+from ..config import settings
 
-# Async engine
-engine = create_async_engine(DATABASE_URL, echo=True)
+# 2. Создаем движок, используя URL из настроек
+# echo=settings.DB_ECHO можно добавить в конфиг, чтобы включать/выключать логирование SQL
+engine = create_async_engine(settings.DATABASE_URL, echo=True)
 
-AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+# Фабрика асинхронных сессий
+AsyncSessionLocal = sessionmaker(
+    bind=engine,
+    class_=AsyncSession,
+    expire_on_commit=False
+)
 
+# Базовый класс для моделей
 Base = declarative_base()
 
+
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    """
+    Dependency provider для получения асинхронной сессии БД.
+    """
+    # 3. Упрощенная и более идиоматичная версия. `async with` все делает за нас.
     async with AsyncSessionLocal() as session:
-        try:
-            yield session
-        finally:
-            await session.close()
+        yield session

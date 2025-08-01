@@ -1,55 +1,53 @@
+# services/user_service.py
+
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
-from models.models import User
-from schemas.user import UserCreate
-from utils.auth import get_password_hash, verify_password
 from fastapi import HTTPException, status
+
+from ..models.models import User
+from ..schemas.user import UserCreate
+# Предположим, что эти функции находятся в utils.security
+from ..utils.security import hash_password, verify_password
 
 
 class UserService:
+    # 1. Убираем все декораторы @staticmethod
+    # 2. Добавляем `self` в качестве первого аргумента во все методы
 
-    @staticmethod
-    async def create_user(db: AsyncSession, user_data: UserCreate) -> User:
-        # Проверка существования пользователя
-        result = await db.execute(select(User).filter(User.email == user_data.email))
-        if result.scalar_one_or_none():
+    async def get_user_by_email(self, db: AsyncSession, email: str) -> User | None:
+        """Асинхронно получает пользователя по email."""
+        query = select(User).where(User.email == email)
+        result = await db.execute(query)
+        return result.scalar_one_or_none()
+
+    async def create_user(self, db: AsyncSession, user_data: UserCreate) -> User:
+        """Асинхронно создает нового пользователя."""
+        # 3. Используем собственный метод для проверки (принцип DRY)
+        existing_user = await self.get_user_by_email(db, user_data.email)
+        if existing_user:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Email already registered"
+                detail="Пользователь с таким email уже существует."
             )
 
-        # Создание пользователя
-        hashed_password = get_password_hash(user_data.password)
-        db_user = User(
-            email=user_data.email,
-            hashed_password=hashed_password
-        )
+        hashed_pass = hash_password(user_data.password)
+        new_user = User(email=user_data.email, hashed_password=hashed_pass)
 
-        db.add(db_user)
+        db.add(new_user)
         await db.commit()
-        # НЕ ДЕЛАЕМ refresh, так как он не загрузит связи.
-        # Вместо этого мы заново запросим пользователя с нужными связями.
+        await db.refresh(new_user)
+        return new_user
 
-        # Запрашиваем созданного пользователя еще раз, но с "жадной загрузкой"
-        result = await db.execute(
-            select(User)
-            .options(selectinload(User.allegro_accounts)) # <--- ВОТ КЛЮЧЕВОЕ ИЗМЕНЕНИЕ
-            .filter(User.id == db_user.id)
-        )
-
-        created_user_with_relations = result.scalar_one()
-        return created_user_with_relations
-
-    @staticmethod
-    async def authenticate_user(db: AsyncSession, email: str, password: str) -> User:
-        result = await db.execute(select(User).filter(User.email == email))
-        user = result.scalar_one_or_none()
+    async def authenticate_user(self, db: AsyncSession, email: str, password: str) -> User | None:
+        """
+        Асинхронно аутентифицирует пользователя. Возвращает User или None.
+        """
+        user = await self.get_user_by_email(db, email)
 
         if not user or not verify_password(password, user.hashed_password):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Incorrect email or password"
-            )
+            # Просто возвращаем None, а роутер решит, какую ошибку выдать.
+            # Это делает сервис более универсальным.
+            return None
 
         return user

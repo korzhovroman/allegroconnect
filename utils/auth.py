@@ -1,45 +1,42 @@
 from datetime import datetime, timedelta
 from typing import Optional
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 from fastapi import HTTPException, status
-import os
 
-# Используем pydantic-settings для конфигурации в будущем
-SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-change-this-in-production")
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# 1. Импортируем наш центральный объект настроек
+from ..config import settings
+from ..schemas.token import TokenPayload  # <-- Рекомендую создать эту Pydantic-схему
 
 
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
-
-
-def get_password_hash(password: str) -> str:
-    return pwd_context.hash(password)
-
-
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
+def create_access_token(data: dict) -> str:
+    """
+    Создает новый JWT токен.
+    """
     to_encode = data.copy()
-    if expires_delta:
-        expire = datetime.utcnow() + expires_delta
-    else:
-        expire = datetime.utcnow() + timedelta(minutes=15)
 
+    # 2. Берем время жизни токена из центральных настроек
+    expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+    # 3. Используем ключ и алгоритм из настроек
+    encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
 
 
-def verify_token(token: str) -> Optional[int]:
+def verify_token(token: str, credentials_exception: HTTPException) -> TokenPayload:
+    """
+    Проверяет JWT токен и возвращает его полезную нагрузку (payload).
+    В случае ошибки выбрасывает credentials_exception.
+    """
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        user_id: int = payload.get("sub")  # Исправлена кавычка
+        # 4. Используем ключ и алгоритм из настроек
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
 
-        if user_id is None:
-            return None
-        return int(user_id)
-    except (JWTError, ValueError):
-        return None
+        # 5. Валидируем содержимое токена с помощью Pydantic-схемы
+        token_data = TokenPayload(**payload)
+
+    except (JWTError, ValueError) as e:
+        # Если токен невалиден или его структура некорректна
+        raise credentials_exception from e
+
+    return token_data
