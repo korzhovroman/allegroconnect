@@ -27,20 +27,26 @@ async def register_user(
     user = await user_service.create_user(db, user_data)
     return user
 
-
 @router.post("/login", response_model=Token)
 async def login_for_access_token(
-    # Используем стандартную форму FastAPI для получения email/password
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: AsyncSession = Depends(get_db),
-    user_service: UserService = Depends(get_user_service) # <-- Внедряем сервис
+    user_service: UserService = Depends(get_user_service)
 ):
     """Аутентификация пользователя и выдача JWT токена."""
     user = await user_service.authenticate_user(db, email=form_data.username, password=form_data.password)
 
-    # Создаем токен
+    # Если сервис вернул None, значит, аутентификация не удалась
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Неправильный email или пароль",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # Если все хорошо, создаем токен
     access_token = create_access_token(
-        data={"sub": user.email} # Используем email как subject токена
+        data={"sub": user.email}
     )
 
     return {"access_token": access_token, "token_type": "bearer"}

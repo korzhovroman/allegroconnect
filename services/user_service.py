@@ -7,13 +7,16 @@ from fastapi import HTTPException, status
 
 from ..models.models import User
 from ..schemas.user import UserCreate
-# Предположим, что эти функции находятся в utils.security
 from ..utils.security import hash_password, verify_password
 
 
 class UserService:
-    # 1. Убираем все декораторы @staticmethod
-    # 2. Добавляем `self` в качестве первого аргумента во все методы
+
+    async def get_user_by_id(self, db: AsyncSession, user_id: int) -> User | None:
+        """Асинхронно получает пользователя по ID."""
+        query = select(User).where(User.id == user_id)
+        result = await db.execute(query)
+        return result.scalar_one_or_none()
 
     async def get_user_by_email(self, db: AsyncSession, email: str) -> User | None:
         """Асинхронно получает пользователя по email."""
@@ -41,13 +44,12 @@ class UserService:
 
     async def authenticate_user(self, db: AsyncSession, email: str, password: str) -> User | None:
         """
-        Асинхронно аутентифицирует пользователя. Возвращает User или None.
+        Асинхронно аутентифицирует пользователя.
+        Возвращает объект User в случае успеха или None в случае неудачи.
         """
         user = await self.get_user_by_email(db, email)
 
         if not user or not verify_password(password, user.hashed_password):
-            # Просто возвращаем None, а роутер решит, какую ошибку выдать.
-            # Это делает сервис более универсальным.
-            return None
+            return None  # Просто возвращаем None, без ошибки
 
         return user

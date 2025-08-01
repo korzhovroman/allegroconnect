@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routers import auth, allegro
+from .routers import auth, allegro
 
 app = FastAPI(title="Allegro Connect API", version="1.0.0")
 
