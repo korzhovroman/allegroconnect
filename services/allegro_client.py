@@ -24,7 +24,6 @@ class AllegroClient:
         self.client = httpx.AsyncClient(base_url=ALLEGRO_API_URL, headers=self.base_headers)
 
     async def _request(self, method: str, url: str, headers: dict = None, **kwargs):
-        """Внутренний метод-обертка для всех запросов для обработки ошибок."""
         request_headers = self.base_headers.copy()
         if headers:
             request_headers.update(headers)
@@ -36,27 +35,40 @@ class AllegroClient:
                 return {}
             return response.json()
         except httpx.HTTPStatusError as e:
-            print(f"Error making request to {e.request.url}: {e.response.text}")
+            print(f"Error from Allegro API for request {e.request.url}: {e.response.text}")
             raise HTTPException(
-                status_code=e.response.status_code,
-                detail=f"Failed to make request to Allegro API: {e.response.text}"
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Error from Allegro API: {e.response.text}"
             )
 
+    # --- Общие сообщения (вопросы о продукте) ---
     async def get_threads(self, limit: int = 20, offset: int = 0):
         return await self._request("GET", f"/messaging/threads?limit={limit}&offset={offset}")
 
     async def get_thread_messages(self, thread_id: str, limit: int = 20, offset: int = 0):
         return await self._request("GET", f"/messaging/threads/{thread_id}/messages?limit={limit}&offset={offset}")
 
+    # === ИСПРАВЛЕНИЕ ЗДЕСЬ ===
     async def post_thread_message(self, thread_id: str, text: str, attachment_id: str = None):
+        """Отправляет ответ в обычный диалог."""
         message_data = {"text": text, "type": "REGULAR"}
         if attachment_id:
             message_data["attachment"] = {"id": attachment_id}
-        return await self._request("POST", f"/messaging/threads/{thread_id}/messages", json={"message": message_data})
+
+        # Для POST-запросов нужен правильный заголовок Content-Type
+        headers = {"Content-Type": "application/vnd.allegro.public.v1+json"}
+
+        return await self._request(
+            "POST",
+            f"/messaging/threads/{thread_id}/messages",
+            json={"message": message_data},
+            headers=headers
+        )
 
     async def get_offer_details(self, offer_id: str):
         return await self._request("GET", f"/sale/offers/{offer_id}")
 
+    # --- НОВЫЙ ЕДИНЫЙ РЕСУРС для Дискуссий и Рекламаций ---
     async def get_issues(self, limit: int = 20, offset: int = 0):
         headers = {"Accept": "application/vnd.allegro.beta.v1+json"}
         return await self._request("GET", f"/sale/issues?limit={limit}&offset={offset}", headers=headers)
@@ -69,28 +81,29 @@ class AllegroClient:
         headers = {"Accept": "application/vnd.allegro.beta.v1+json"}
         return await self._request("GET", f"/sale/issues/{issue_id}/chat", headers=headers)
 
+    # === И ИСПРАВЛЕНИЕ ЗДЕСЬ ===
     async def post_issue_message(self, issue_id: str, text: str):
-        headers = {"Accept": "application/vnd.allegro.beta.v1+json"}
+        """Отправляет ответ в дискуссию/рекламацию."""
         message_data = {"text": text, "type": "REGULAR"}
+
+        # Для бета-ресурсов нужен свой заголовок Content-Type
+        headers = {"Content-Type": "application/vnd.allegro.beta.v1+json"}
+
         return await self._request("POST", f"/sale/issues/{issue_id}/message", json=message_data, headers=headers)
 
     async def get_order_details(self, checkout_form_id: str):
         return await self._request("GET", f"/order/checkout-forms/{checkout_form_id}")
 
     async def declare_attachment(self, file_name: str, file_size: int) -> dict:
-        """
-        Объявляет о намерении загрузить вложение.
-        """
         declaration_data = {
             "fileName": file_name,
             "fileSize": file_size
         }
-        # Для этого эндпоинта нужен особый Content-Type
         headers = {"Content-Type": "application/vnd.allegro.public.v1+json"}
         return await self._request("POST", "/sale/message-attachments", json=declaration_data, headers=headers)
 
 
-# "Фабрика" для создания клиента
+# "Фабрика" для создания клиента (без изменений)
 async def get_allegro_client(allegro_account_id: int, current_user_id: int,
                              db: AsyncSession = Depends(get_db)) -> AllegroClient:
     query = select(AllegroAccount).where(
