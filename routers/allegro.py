@@ -3,15 +3,18 @@
 from fastapi import APIRouter, Depends, Query, HTTPException, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
+from schemas.allegro import AllegroAccountOut
 from urllib.parse import urlencode
-
-from ..config import settings
-from ..models.database import get_db
-from ..models.models import User
-from ..services.allegro_service import AllegroService
-from ..services.user_service import UserService
-from ..utils.dependencies import get_current_user, get_user_service
-from ..utils.auth import create_state_token, verify_state_token
+from typing import List
+from sqlalchemy import select
+from models.models import AllegroAccount
+from config import settings
+from models.database import get_db
+from models.models import User
+from services.allegro_service import AllegroService
+from services.user_service import UserService
+from utils.dependencies import get_current_user, get_user_service
+from utils.auth import create_state_token, verify_state_token
 
 
 def get_allegro_service() -> AllegroService:
@@ -21,6 +24,11 @@ def get_allegro_service() -> AllegroService:
         redirect_uri=settings.ALLEGRO_REDIRECT_URI,
         auth_url=settings.ALLEGRO_AUTH_URL
     )
+
+async def get_user_allegro_accounts(db: AsyncSession, user_id: int) -> List[AllegroAccount]:
+    query = select(AllegroAccount).where(AllegroAccount.owner_id == user_id)
+    result = await db.execute(query)
+    return result.scalars().all()
 
 
 router = APIRouter(prefix="/api/allegro", tags=["Allegro"])
@@ -45,8 +53,6 @@ async def allegro_auth_callback(
         allegro_service: AllegroService = Depends(get_allegro_service)
 ):
     redirect_url = f"{settings.FRONTEND_URL}/settings/accounts"
-
-
 
     user_id = verify_state_token(state)
     if not user_id:
@@ -76,3 +82,14 @@ async def allegro_auth_callback(
         # Этот блок поймает любые другие ошибки (например, KeyError)
         params = urlencode({"error": "Произошла внутренняя ошибка сервера."})
         return RedirectResponse(url=f"{redirect_url}?{params}")
+
+@router.get("/accounts", response_model=List[AllegroAccountOut])
+async def list_user_allegro_accounts(
+        current_user: User = Depends(get_current_user),
+        db: AsyncSession = Depends(get_db)
+):
+        """
+        Возвращает список всех привязанных аккаунтов Allegro для текущего пользователя.
+        """
+        accounts = await get_user_allegro_accounts(db=db, user_id=current_user.id)
+        return accounts

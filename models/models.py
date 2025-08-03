@@ -2,7 +2,6 @@ from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from .database import Base
-# 'datetime' не используется, можно удалить, но не является ошибкой
 # from datetime import datetime
 
 class User(Base):

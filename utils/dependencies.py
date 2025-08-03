@@ -6,10 +6,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 # 1. Используем обновленные утилиты
 from .auth import verify_token
-from ..models.database import get_db
-from ..models.models import User
-from ..services.user_service import UserService  # <-- Будем использовать сервис
-from ..schemas.token import TokenPayload
+from models.database import get_db
+from models.models import User
+from services.user_service import UserService  # <-- Будем использовать сервис
+from schemas.token import TokenPayload
 
 # Указываем FastAPI, откуда брать токен (из эндпоинта /api/auth/login)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")

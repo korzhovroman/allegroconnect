@@ -3,7 +3,7 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 from typing import AsyncGenerator
 
 # 1. Импортируем наш центральный объект настроек
-from ..config import settings
+from config import settings
 
 # 2. Создаем движок, используя URL из настроек
 # echo=settings.DB_ECHO можно добавить в конфиг, чтобы включать/выключать логирование SQL

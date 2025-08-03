@@ -5,9 +5,9 @@ from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 from fastapi import HTTPException, status
 
-from ..models.models import User
-from ..schemas.user import UserCreate
-from ..utils.security import hash_password, verify_password
+from models.models import User
+from schemas.user import UserCreate
+from utils.security import hash_password, verify_password
 
 
 class UserService:

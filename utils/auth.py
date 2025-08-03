@@ -4,8 +4,8 @@ from datetime import datetime, timedelta, timezone  # <-- ИСПРАВЛЕНИЕ
 from jose import JWTError, jwt
 from fastapi import HTTPException, status
 
-from ..config import settings
-from ..schemas.token import TokenPayload
+from config import settings
+from schemas.token import TokenPayload
 
 
 def create_access_token(data: dict) -> str:

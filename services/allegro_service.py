@@ -7,9 +7,9 @@ from urllib.parse import urlencode
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from ..models.models import User, AllegroAccount
-from ..utils.security import encrypt_data
-from ..config import settings
+from models.models import User, AllegroAccount
+from utils.security import encrypt_data
+from config import settings
 
 
 class AllegroService:
@@ -125,3 +125,8 @@ class AllegroService:
         await db.commit()
         await db.refresh(db_account)
         return db_account
+
+async def get_allegro_account_by_user_id(user_id: int, db: AsyncSession) -> AllegroAccount | None:
+    query = select(AllegroAccount).where(AllegroAccount.owner_id == user_id)
+    result = await db.execute(query)
+    return result.scalar_one_or_none()

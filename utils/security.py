@@ -2,7 +2,7 @@ from cryptography.fernet import Fernet
 from passlib.context import CryptContext
 
 # 1. Импортируем наш центральный объект настроек
-from ..config import settings
+from config import settings
 
 # --- Хеширование паролей ---
 # Создаем контекст passlib для хеширования

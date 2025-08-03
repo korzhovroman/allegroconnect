@@ -3,12 +3,12 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 
 # Импортируем наш объект настроек
-from ..config import settings
-from ..models.database import get_db
-from ..schemas.user import UserCreate, UserResponse, Token
-from ..services.user_service import UserService
+from config import settings
+from models.database import get_db
+from schemas.user import UserCreate, UserResponse, Token
+from services.user_service import UserService
 # Функцию create_access_token нужно будет немного изменить
-from ..utils.auth import create_access_token
+from utils.auth import create_access_token
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
