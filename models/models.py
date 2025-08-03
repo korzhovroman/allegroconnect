@@ -1,8 +1,8 @@
-from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey
+from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey, Boolean
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from .database import Base
-# from datetime import datetime
+from datetime import datetime
 
 class User(Base):
     __tablename__ = "users"
@@ -26,6 +26,18 @@ class AllegroAccount(Base):
     access_token = Column(Text, nullable=False)  # зашифрованный
     refresh_token = Column(Text, nullable=False)  # зашифрованный
     expires_at = Column(DateTime(timezone=True), nullable=False)
+    auto_reply_enabled = Column(Boolean, default=False)
+    auto_reply_text = Column(String, nullable=True)
 
     # Relationship
     owner = relationship("User", back_populates="allegro_accounts")
+
+class AutoReplyLog(Base):
+    __tablename__ = 'auto_reply_log'
+
+    # Составной первичный ключ, чтобы для каждого вашего аккаунта
+    # можно было отслеживать свои диалоги
+    conversation_id = Column(String, primary_key=True)
+    allegro_account_id = Column(Integer, ForeignKey('allegro_accounts.id'), primary_key=True)
+
+    reply_time = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

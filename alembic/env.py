@@ -15,24 +15,31 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
 
-# Импортируем модели, чтобы Base.metadata их "увидел"
-from models.database import Base, DATABASE_URL
-from models import models
+# --- ИСПРАВЛЕНИЯ ЗДЕСЬ ---
+# 1. Импортируем наши модели и настройки
+from models.models import Base
+from config import settings
 
 # Alembic Config object
 config = context.config
+
+# 2. Указываем Alembic, откуда брать URL для подключения к БД
+# Он будет взят из вашего .env файла через объект settings
+config.set_main_option('sqlalchemy.url', settings.DATABASE_URL)
 
 # Interpret the config file for Python logging
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Указываем Alembic на наши модели
+# 3. Указываем Alembic на метаданные наших моделей
 target_metadata = Base.metadata
 
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode."""
+    # Alembic теперь будет использовать URL, который мы задали выше
+    url = config.get_main_option("sqlalchemy.url")
     context.configure(
-        url=DATABASE_URL,
+        url=url,
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
@@ -51,7 +58,6 @@ async def run_async_migrations():
         config.get_section(config.config_ini_section),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
-        url=DATABASE_URL
     )
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
@@ -59,20 +65,7 @@ async def run_async_migrations():
 
 def run_migrations_online() -> None:
     """Run migrations in 'online' mode."""
-    # Для autogenerate используем синхронный движок
-    if getattr(config.cmd_opts, 'autogenerate', False):
-        sync_url = DATABASE_URL.replace("+asyncpg", "")
-        sync_engine = engine_from_config(
-            config.get_section(config.config_ini_section),
-            prefix="sqlalchemy.",
-            poolclass=pool.NullPool,
-            url=sync_url
-        )
-        with sync_engine.connect() as connection:
-            do_run_migrations(connection)
-    # Для upgrade и других команд используем асинхронный движок
-    else:
-        asyncio.run(run_async_migrations())
+    asyncio.run(run_async_migrations())
 
 if context.is_offline_mode():
     run_migrations_offline()

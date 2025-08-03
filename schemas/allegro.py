@@ -1,5 +1,11 @@
 # schemas/allegro.py
 from pydantic import BaseModel
+from typing import Optional
+
+
+class AllegroAccountSettingsUpdate(BaseModel):
+    auto_reply_enabled: Optional[bool] = None
+    auto_reply_text: Optional[str] = None
 
 class AllegroAccountOut(BaseModel):
     id: int
