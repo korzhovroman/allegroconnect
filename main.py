@@ -33,12 +33,25 @@ async def run_auto_responder_task():
 async def lifespan(app: FastAPI):
     # Этот код выполняется при старте приложения
     scheduler.add_job(run_auto_responder_task, 'interval', minutes=5)
+    scheduler.add_job(run_cleanup_task, 'cron', hour=3, minute=0, id="cleanup_job")  # Запускать каждый день в 3 часа ночи
     scheduler.start()
-    print("Планировщик задач запущен. Автоответчик будет работать в фоновом режиме.")
+    print("Планировщик задач запущен. Автоответчик и очистка будут работать в фоновом режиме.")
     yield
-    # Этот код выполняется при остановке приложения (если нужно)
+    # Этот код выполняется при остановке приложения
     scheduler.shutdown()
     print("Планировщик задач остановлен.")
+
+async def run_cleanup_task():
+    """Функция-обертка для запуска сервиса очистки."""
+    print("Планировщик запускает задачу очистки логов...")
+    db_session = AsyncSessionLocal()
+    try:
+        # Мы можем переиспользовать сервис, так как он работает с той же сессией
+        service = AutoResponderService(db=db_session)
+        await service.cleanup_old_logs()
+    finally:
+        await db_session.close()
+
 
 app = FastAPI(title="Allegro Connect API", version="1.0.0", lifespan=lifespan)
 
