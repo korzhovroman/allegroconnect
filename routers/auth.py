@@ -2,14 +2,30 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-
 from models.database import get_db
 from models.models import User
 from schemas.user import UserResponse
 from schemas.token import TokenPayload
 from utils.auth import verify_token
+from pydantic import BaseModel
+from utils.dependencies import get_current_user
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
+
+class FCMTokenPayload(BaseModel):
+    token: str
+
+@router.post("/register-fcm-token", status_code=status.HTTP_200_OK)
+async def register_fcm_token(
+    payload: FCMTokenPayload,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Сохраняет или обновляет FCM токен для текущего пользователя."""
+    current_user.fcm_token = payload.token
+    await db.commit()
+    return {"status": "success"}
+
 
 @router.post("/sync-user", response_model=UserResponse, status_code=status.HTTP_200_OK)
 async def sync_supabase_user(

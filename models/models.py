@@ -14,6 +14,7 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     subscription_status = Column(String, default='free', nullable=False)  # 'free', 'trial', 'active', 'canceled'
     subscription_ends_at = Column(DateTime(timezone=True), nullable=True)
+    fcm_token = Column(String, nullable=True)
 
     # Relationship
     allegro_accounts = relationship("AllegroAccount", back_populates="owner", cascade="all, delete-orphan")
