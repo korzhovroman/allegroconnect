@@ -33,8 +33,21 @@ def verify_state_token(token: str) -> int | None:
 
 def verify_token(token: str, credentials_exception: HTTPException) -> TokenPayload:
     try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-        token_data = TokenPayload(**payload)
+        # Используем секрет от Supabase для декодирования
+        payload = jwt.decode(
+            token,
+            settings.SUPABASE_JWT_SECRET,
+            algorithms=[settings.ALGORITHM],
+            audience="authenticated" # <-- ВАЖНО для Supabase
+        )
+        # sub в токене Supabase - это ID пользователя в Supabase
+        user_id = payload.get("sub")
+        if user_id is None:
+            raise credentials_exception
+        # Мы можем также извлечь email
+        email = payload.get("email")
+        token_data = TokenPayload(sub=user_id, email=email) # <-- Сохраняем и email
+
     except (JWTError, ValueError):
         raise credentials_exception
     return token_data
