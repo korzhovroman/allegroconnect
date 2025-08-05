@@ -10,12 +10,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # .resolve() -> получаем полный абсолютный путь
 ROOT_DIR = Path(__file__).parent.resolve()
 
-
 class Settings(BaseSettings):
     """
     Класс для управления настройками приложения.
     """
-    # 3. Указываем Pydantic точный путь к .env файлу
+    # Указываем Pydantic точный путь к .env файлу
     model_config = SettingsConfigDict(env_file=os.path.join(ROOT_DIR, '.env'), env_file_encoding='utf-8')
 
     # --- Настройки базы данных ---
@@ -37,9 +36,10 @@ class Settings(BaseSettings):
     # --- Настройки фронтенда ---
     FRONTEND_URL: str
 
-    # --- Настройки Supabase (ДОБАВЛЯЕМ) ---
+    # --- Настройки Supabase ---
     SUPABASE_JWT_SECRET: str
-
+    # ---  КЛЮЧ ДЛЯ REVENUECAT ---
+    REVENUECAT_WEBHOOK_TOKEN: str
 
 # Создаем единственный экземпляр настроек
 settings = Settings()

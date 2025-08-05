@@ -43,3 +43,15 @@ async def get_current_user(
         raise credentials_exception
 
     return user
+
+def get_premium_user(current_user: User = Depends(get_current_user)) -> User:
+    """
+    Проверяет, есть ли у текущего пользователя активная подписка.
+    Если нет - возвращает ошибку.
+    """
+    if current_user.subscription_status not in ["active", "trial"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This feature requires an active premium subscription."
+        )
+    return current_user

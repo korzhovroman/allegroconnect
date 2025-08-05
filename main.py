@@ -7,7 +7,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 
-from routers import auth, allegro, conversations
+from routers import auth, allegro, conversations, webhooks
 from services.auto_responder_service import AutoResponderService
 from config import settings
 
@@ -75,6 +75,7 @@ async def debug_run_responder():
 app.include_router(auth.router)
 app.include_router(allegro.router)
 app.include_router(conversations.router)
+app.include_router(webhooks.router)
 
 @app.get("/")
 async def root():
