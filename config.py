@@ -41,7 +41,6 @@ class Settings(BaseSettings):
     # ---  КЛЮЧ ДЛЯ REVENUECAT ---
     REVENUECAT_WEBHOOK_TOKEN: str
 
-    FIREBASE_CREDENTIALS_JSON: str
 
 # Создаем единственный экземпляр настроек
 settings = Settings()

@@ -1,20 +1,14 @@
 # services/notification_service.py
 import firebase_admin
 from firebase_admin import credentials, messaging
-from config import settings
-import json
 
-# --- Инициализация из переменной окружения ---
+# --- Бесключевая инициализация ---
+# В среде Railway/Google Cloud учетные данные подхватятся автоматически
 try:
-    # Преобразуем JSON-строку из переменной окружения в словарь
-    creds_json = json.loads(settings.FIREBASE_CREDENTIALS_JSON)
-    cred = credentials.Certificate(creds_json)
-    firebase_admin.initialize_app(cred)
-    print("Firebase Admin SDK инициализирован успешно.")
-except json.JSONDecodeError:
-    print("ОШИБКА: Не удалось прочитать FIREBASE_CREDENTIALS_JSON. Убедитесь, что это валидный JSON.")
+    firebase_admin.initialize_app()
+    print("Firebase Admin SDK инициализирован автоматически.")
 except Exception as e:
-    print(f"ОШИБКА при инициализации Firebase: {e}")
+    print(f"ОШИБКА при автоматической инициализации Firebase: {e}")
 
 
 def send_notification(token: str, title: str, body: str):
