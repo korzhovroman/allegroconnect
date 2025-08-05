@@ -1,5 +1,7 @@
 # schemas/token.py
 from pydantic import BaseModel
+from typing import Optional
 
 class TokenPayload(BaseModel):
-    sub: str | None = None
+    sub: Optional[str] = None
+    email: Optional[str] = None
