@@ -1,52 +1,60 @@
+# routers/auth.py
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 
-# Импортируем наш объект настроек
-from config import settings
+# Импортируем нужные модели, схемы и сервисы
 from models.database import get_db
-from schemas.user import UserCreate, UserResponse, Token
+from models.models import User
+from schemas.user import UserResponse
+from schemas.token import TokenPayload
 from services.user_service import UserService
-# Функцию create_access_token нужно будет немного изменить
-from utils.auth import create_access_token
+# Импортируем нашу НОВУЮ функцию для верификации токена Supabase
+from utils.auth import verify_token
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
-# Провайдер зависимости для UserService
+# Провайдер зависимости для UserService остается без изменений
 def get_user_service() -> UserService:
     return UserService()
 
-@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-async def register_user(
-    user_data: UserCreate,
+# ---  ЭНДПОИНТ ДЛЯ СИНХРОНИЗАЦИИ С SUPABASE ---
+@router.post("/sync-user", response_model=UserResponse, status_code=status.HTTP_200_OK)
+async def sync_supabase_user(
     db: AsyncSession = Depends(get_db),
-    user_service: UserService = Depends(get_user_service) # <-- Внедряем сервис
+    user_service: UserService = Depends(get_user_service),
+    # Эта зависимость проверяет токен Supabase ИЗ ЗАГОЛОВКА запроса
+    # и возвращает его полезную нагрузку (payload)
+    token_payload: TokenPayload = Depends(verify_token)
 ):
-    """Регистрация нового пользователя"""
-    # Вызываем метод экземпляра
-    user = await user_service.create_user(db, user_data)
-    return user
-
-@router.post("/login", response_model=Token)
-async def login_for_access_token(
-    form_data: OAuth2PasswordRequestForm = Depends(),
-    db: AsyncSession = Depends(get_db),
-    user_service: UserService = Depends(get_user_service)
-):
-    """Аутентификация пользователя и выдача JWT токена."""
-    user = await user_service.authenticate_user(db, email=form_data.username, password=form_data.password)
-
-    # Если сервис вернул None, значит, аутентификация не удалась
-    if not user:
+    """
+    Проверяет токен от Supabase. Если пользователь с таким email
+    не существует в нашей БД, создает его. Если существует - возвращает его.
+    Этот эндпоинт нужно вызывать с фронтенда каждый раз после успешного
+    логина или регистрации через Supabase.
+    """
+    # Мы ожидаем, что в токене от Supabase есть email
+    if not token_payload.email:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Неправильный email или пароль",
-            headers={"WWW-Authenticate": "Bearer"},
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email not found in Supabase token."
         )
 
-    # Если все хорошо, создаем токен
-    access_token = create_access_token(
-        data={"sub": user.email}
+    # Ищем пользователя в НАШЕЙ базе данных по email из токена
+    db_user = await user_service.get_user_by_email(db, email=token_payload.email)
+
+    # Если пользователь уже есть в нашей базе, просто возвращаем его
+    if db_user:
+        return db_user
+
+    # Если пользователя нет, создаем его.
+    new_user_data = User(
+        email=token_payload.email,
+        hashed_password="not_used" # Пароль не используется
     )
 
-    return {"access_token": access_token, "token_type": "bearer"}
+    # Сохраняем нового пользователя в нашей БД
+    db.add(new_user_data)
+    await db.commit()
+    await db.refresh(new_user_data)
+
+    return new_user_data
