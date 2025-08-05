@@ -1,7 +1,7 @@
 # routers/auth.py
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select # <-- Импортируем select
+from sqlalchemy import select 
 
 from models.database import get_db
 from models.models import User
@@ -51,38 +51,3 @@ async def sync_supabase_user(
     await db.commit()
     await db.refresh(new_user)
     return new_user
-Шаг 4: Обновите зависимость get_current_user
-Наконец, изменим get_current_user, чтобы он тоже искал пользователя по supabase_user_id.
-
-Python
-
-# utils/dependencies.py
-# ... импорты
-from sqlalchemy import select
-
-# ...
-
-async def get_current_user(
-        token: str = Depends(oauth2_scheme),
-        db: AsyncSession = Depends(get_db),
-) -> User:
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-
-    token_data = verify_token(token, credentials_exception)
-
-    if token_data.sub is None:
-        raise credentials_exception
-
-    # Ищем пользователя в НАШЕЙ БД по ID из токена Supabase
-    query = select(User).where(User.supabase_user_id == token_data.sub)
-    result = await db.execute(query)
-    user = result.scalar_one_or_none()
-
-    if user is None:
-        raise credentials_exception
-
-    return user
