@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     # --- Настройки фронтенда ---
     FRONTEND_URL: str
 
+    # --- Настройки Supabase (ДОБАВЛЯЕМ) ---
+    SUPABASE_JWT_SECRET: str
+
 
 # Создаем единственный экземпляр настроек
 settings = Settings()
