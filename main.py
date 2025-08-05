@@ -6,11 +6,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
-
 from routers import auth, allegro, conversations, webhooks
 from services.auto_responder_service import AutoResponderService
 from config import settings
-
+from fastapi import Depends
+from services.notification_service import send_notification
+from models.models import User
+from sqlalchemy import select
+from models.database import get_db
 # --- ЛОГИКА АВТООТВЕТЧИКА И LIFESPAN ---
 
 # Создаем асинхронную сессию для фоновой задачи
@@ -70,6 +73,7 @@ async def debug_run_responder():
     """Немедленно запускает задачу автоответчика."""
     await run_auto_responder_task()
     return {"message": "Auto-responder task has been triggered successfully."}
+
 
 # --- Подключение роутеров ---
 app.include_router(auth.router)
