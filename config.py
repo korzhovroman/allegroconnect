@@ -1,21 +1,23 @@
 # config.py
 
 import os
-from pathlib import Path  # <-- 1. Импортируем Path из стандартной библиотеки
+from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# 2. Определяем путь к корневой папке проекта
-# Path(__file__) -> текущий файл (config.py)
-# .parent -> родительская папка (allegroconnect)
-# .resolve() -> получаем полный абсолютный путь
+# Определяем путь к корневой папке проекта
 ROOT_DIR = Path(__file__).parent.resolve()
+
 
 class Settings(BaseSettings):
     """
     Класс для управления настройками приложения.
     """
-    # Указываем Pydantic точный путь к .env файлу
     model_config = SettingsConfigDict(env_file=os.path.join(ROOT_DIR, '.env'), env_file_encoding='utf-8')
+
+    # --- Настройки режима работы ---
+    # По умолчанию выключено для безопасности.
+    # Для локальной разработки добавьте DEBUG=true в .env файл.
+    DEBUG: bool = False
 
     # --- Настройки базы данных ---
     DATABASE_URL: str
@@ -38,14 +40,15 @@ class Settings(BaseSettings):
 
     # --- Настройки Supabase ---
     SUPABASE_JWT_SECRET: str
-    # ---  КЛЮЧ ДЛЯ REVENUECAT ---
+
+    # --- КЛЮЧ ДЛЯ REVENUECAT ---
     REVENUECAT_WEBHOOK_TOKEN: str
 
 
 # Создаем единственный экземпляр настроек
 settings = Settings()
 
-# Проверка на наличие критически важных ключей остается без изменений
+# Проверка на наличие критически важных ключей
 if not settings.SECRET_KEY or not settings.ENCRYPTION_KEY:
     raise ValueError(
         "Переменные SECRET_KEY и ENCRYPTION_KEY не могут быть пустыми. "
