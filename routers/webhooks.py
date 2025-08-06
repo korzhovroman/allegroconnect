@@ -1,12 +1,10 @@
 # routers/webhooks.py
-
 from fastapi import APIRouter, Depends, HTTPException, status, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel, Field
 from datetime import datetime
 from typing import Dict, Any
-
 from models.database import get_db
 from models.models import User
 from config import settings
@@ -18,6 +16,8 @@ class Event(BaseModel):
     app_user_id: str = Field(..., alias="app_user_id")
     type: str
     expires_at_ms: int | None = Field(None, alias="expires_at_ms")
+    product_identifier: str | None = None  # Поле для определения типа подписки
+    period_type: str | None = None  # Поле для определения, триал ли это
 
 class WebhookPayload(BaseModel):
     api_version: str
@@ -51,15 +51,33 @@ async def handle_revenuecat_webhook(
     new_status = user.subscription_status
     new_end_date = user.subscription_ends_at
 
-    if event_type in ["INITIAL_PURCHASE", "RENEWAL", "UNCANCELLATION"]:
-        new_status = "active"
+    # Обработка начала триала
+    if event_type == "INITIAL_PURCHASE" and payload.event.period_type == "TRIAL":
+        new_status = "trial"
         if payload.event.expires_at_ms:
             new_end_date = datetime.fromtimestamp(payload.event.expires_at_ms / 1000)
+
+    # Обработка покупок и возобновлений
+    elif event_type in ["INITIAL_PURCHASE", "RENEWAL", "UNCANCELLATION"]:
+        product_id = payload.event.product_identifier
+        if product_id == "pro_subscription":
+            new_status = "pro"
+        elif product_id == "maxi_subscription":
+            new_status = "maxi"
+        # Если пришел триал от Maxi подписки, он тоже будет maxi (согласно вашей логике)
+        elif payload.event.period_type == "TRIAL":
+            new_status = "trial"
+
+        if payload.event.expires_at_ms:
+            new_end_date = datetime.fromtimestamp(payload.event.expires_at_ms / 1000)
+
+    # Обработка отмены и истечения срока (без изменений)
     elif event_type == "CANCELLATION":
-        # При отмене подписка еще действует до конца оплаченного периода
+        # При отмене подписка еще действует до конца периода, но мы можем сменить статус
+        # на pro_canceled / maxi_canceled, если хотим это отслеживать.
+        # Пока оставляем просто "canceled".
         new_status = "canceled"
     elif event_type == "EXPIRATION":
-        # Подписка закончилась
         new_status = "free"
 
     user.subscription_status = new_status

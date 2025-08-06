@@ -12,13 +12,12 @@ class User(Base):
     email = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    subscription_status = Column(String, default='free', nullable=False)  # 'free', 'trial', 'active', 'canceled'
+    subscription_status = Column(String, default='free', nullable=False)  # 'free', 'trial', 'pro', 'maxi'
     subscription_ends_at = Column(DateTime(timezone=True), nullable=True)
     fcm_token = Column(String, nullable=True)
 
     # Relationship
     allegro_accounts = relationship("AllegroAccount", back_populates="owner", cascade="all, delete-orphan")
-
 
 class AllegroAccount(Base):
     __tablename__ = "allegro_accounts"
@@ -43,5 +42,4 @@ class AutoReplyLog(Base):
     # можно было отслеживать свои диалоги
     conversation_id = Column(String, primary_key=True)
     allegro_account_id = Column(Integer, ForeignKey('allegro_accounts.id'), primary_key=True)
-
-    reply_time = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    reply_time = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

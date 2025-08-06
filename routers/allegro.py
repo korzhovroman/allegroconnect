@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from schemas.allegro import AllegroAccountOut
 from urllib.parse import urlencode
 from typing import List
-from sqlalchemy import select
+from sqlalchemy import select, func
 from models.models import AllegroAccount
 from config import settings
 from models.database import get_db
@@ -24,6 +24,11 @@ def get_allegro_service() -> AllegroService:
         redirect_uri=settings.ALLEGRO_REDIRECT_URI,
         auth_url=settings.ALLEGRO_AUTH_URL
     )
+async def count_user_allegro_accounts(db: AsyncSession, user_id: int) -> int:
+    """Подсчитывает количество аккаунтов Allegro у пользователя."""
+    query = select(func.count(AllegroAccount.id)).where(AllegroAccount.owner_id == user_id)
+    result = await db.execute(query)
+    return result.scalar_one()
 
 async def get_user_allegro_accounts(db: AsyncSession, user_id: int) -> List[AllegroAccount]:
     query = select(AllegroAccount).where(AllegroAccount.owner_id == user_id)
@@ -68,7 +73,29 @@ async def allegro_auth_callback(
         token_data = await allegro_service.get_allegro_tokens(code)
 
         allegro_user_data = await allegro_service.get_allegro_user_details(token_data['access_token'])
+        # --- ИЗМЕНЕНИЕ ЗДЕСЬ: ПРОВЕРКА ЛИМИТА АККАУНТОВ ---
+        # Проверяем, существует ли уже такой аккаунт у пользователя
+        existing_account_query = select(AllegroAccount).filter_by(owner_id=user.id,
+                                                                  allegro_user_id=allegro_user_data.get('id'))
+        existing_account = (await db.execute(existing_account_query)).scalar_one_or_none()
 
+        # Если аккаунт новый (не обновление токена существующего)
+        if not existing_account:
+            # Если у пользователя подписка Pro
+            if user.subscription_status == 'pro':
+                current_accounts_count = await count_user_allegro_accounts(db, user_id=user.id)
+                if current_accounts_count >= 5:
+                    error_params = urlencode({"error": "Достигнут лимит в 5 аккаунтов для подписки Pro."})
+                    return RedirectResponse(url=f"{redirect_url}?{error_params}")
+
+            # Для бесплатных пользователей можно установить лимит в 1 аккаунт
+            elif user.subscription_status == 'free':
+                current_accounts_count = await count_user_allegro_accounts(db, user_id=user.id)
+                if current_accounts_count >= 1:  # Например, лимит в 1 аккаунт для бесплатных
+                    error_params = urlencode({"error": "Бесплатный план позволяет добавить только 1 аккаунт."})
+                    return RedirectResponse(url=f"{redirect_url}?{error_params}")
+
+        # Если лимит не превышен (или это подписка Maxi/Trial), создаем или обновляем аккаунт
         await allegro_service.create_or_update_account(db, user, allegro_user_data, token_data)
 
         params = urlencode({"success": "true"})

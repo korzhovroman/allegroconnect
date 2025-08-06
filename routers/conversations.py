@@ -1,12 +1,11 @@
-import asyncio
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from schemas.message import MessageCreate
 from services.allegro_client import get_allegro_client
-from utils.dependencies import get_current_user, get_premium_user
+from utils.dependencies import get_premium_user
 from models.models import User
 from models.database import get_db
-from datetime import datetime, timezone
+from datetime import datetime
 from pydantic import BaseModel
 from schemas.allegro import AllegroAccountSettingsUpdate
 from models.models import AllegroAccount
@@ -99,20 +98,26 @@ async def declare_allegro_attachment(
 @router.get("/{allegro_account_id}/conversations", response_model=dict)
 async def get_all_conversations(
         allegro_account_id: int,
+        limit: int = Query(20, ge=1, le=100),  # <-- ПАРАМЕТР ДЛЯ ПАГИНАЦИИ
+        offset: int = Query(0, ge=0),  # <-- ПАРАМЕТР ДЛЯ ПАГИНАЦИИ
         current_user: User = Depends(get_premium_user),
         db: AsyncSession = Depends(get_db)
 ):
     """
-    Возвращает ЕДИНЫЙ список всех диалогов, дискуссий и рекламаций.
+    Возвращает ЕДИНЫЙ список всех диалогов, дискуссий и рекламаций С ПОДДЕРЖКОЙ ПАГИНАЦИИ.
     Если один из источников данных недоступен, вернет те, что доступны.
     """
     client = await get_allegro_client(allegro_account_id, current_user.id, db)
     all_conversations = []
     errors = []
 
-    # --- Пытаемся получить ОБЩИЕ СООБЩЕНИЯ ---
+    # ПРИМЕЧАНИЕ: Эта логика предполагает, что и "threads", и "issues" поддерживают пагинацию.
+    # Если это не так, ее нужно будет усложнить. Пока что это самый прямой подход.
+
+    # --- Пытаемся получить ОБЩИЕ СООБЩЕНИЯ с пагинацией ---
     try:
-        threads_response = await client.get_threads()
+        # Передаем параметры пагинации в клиент
+        threads_response = await client.get_threads(limit=limit, offset=offset)
         for thread in threads_response.get('threads', []):
             all_conversations.append({
                 "id": thread.get('id'),
@@ -125,9 +130,10 @@ async def get_all_conversations(
         print(f"ERROR fetching threads: {e}")
         errors.append("Could not fetch regular messages.")
 
-    # --- Пытаемся получить ДИСКУССИИ и РЕКЛАМАЦИИ ---
+    # --- Пытаемся получить ДИСКУССИИ и РЕКЛАМАЦИИ с пагинацией ---
     try:
-        issues_response = await client.get_issues()
+        # Передаем параметры пагинации в клиент
+        issues_response = await client.get_issues(limit=limit, offset=offset)
         for issue in issues_response.get('issues', []):
             all_conversations.append({
                 "id": issue.get('id'),
@@ -137,18 +143,17 @@ async def get_all_conversations(
                 "subject": issue.get('subject')
             })
     except Exception as e:
-        # Эта ошибка происходит сейчас, мы ее логируем
         print(f"ERROR fetching issues: {e}")
         errors.append("Could not fetch discussions and claims (Allegro internal error).")
 
-    # --- Сортируем то, что удалось собрать ---
+    # --- Сортируем то, что удалось собрать на этой "странице" ---
     all_conversations.sort(
         key=lambda x: datetime.fromisoformat(x['lastMessageDateTime'].replace('Z', '+00:00')),
         reverse=True
     )
 
+    # Возвращаем результат. Фронтенд может проверить, пуст ли массив, чтобы понять, что загружать больше нечего.
     return {"conversations": all_conversations, "errors": errors}
-
 
 @router.patch("/{allegro_account_id}/settings", response_model=AllegroAccountOut)
 async def update_allegro_account_settings(
