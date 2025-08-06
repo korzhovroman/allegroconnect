@@ -31,8 +31,7 @@ def send_notification(token: str, title: str, body: str):
         token=token,
     )
     try:
-
-        response = messaging.Message(message)
-        print("Successfully sent message:", response)
+        response = messaging.send(message)
+        print("Сообщение успешно отправлено:", response)
     except Exception as e:
-        print("Error sending message:", e)
+        print("Ошибка при отправке сообщения:", e)
