@@ -44,6 +44,11 @@ class Settings(BaseSettings):
     # --- КЛЮЧ ДЛЯ REVENUECAT ---
     REVENUECAT_WEBHOOK_TOKEN: str
 
+    # --- Лимиты подписок ---
+    # Эти значения можно переопределить в .env файле, если нужно
+    SUB_LIMIT_FREE: int = 1
+    SUB_LIMIT_PRO: int = 3
+    # Для Maxi и Trial лимит не ограничен, будем обрабатывать это в коде
 
 # Создаем единственный экземпляр настроек
 settings = Settings()

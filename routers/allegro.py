@@ -86,12 +86,12 @@ async def allegro_auth_callback(
         if not existing_account:
             if user.subscription_status == 'pro':
                 current_accounts_count = await count_user_allegro_accounts(db, user_id=user.id)
-                if current_accounts_count >= 5:
-                    error_params = urlencode({"error": "Достигнут лимит в 5 аккаунтов для подписки Pro."})
+                if current_accounts_count >= settings.SUB_LIMIT_PRO:
+                    error_params = urlencode({"error": "Достигнут лимит в 3 аккаунтов для подписки Pro."})
                     return RedirectResponse(url=f"{redirect_url}?{error_params}")
             elif user.subscription_status == 'free':
                 current_accounts_count = await count_user_allegro_accounts(db, user_id=user.id)
-                if current_accounts_count >= 1:
+                if current_accounts_count >= settings.SUB_LIMIT_FREE:
                     error_params = urlencode({"error": "Бесплатный план позволяет добавить только 1 аккаунт."})
                     return RedirectResponse(url=f"{redirect_url}?{error_params}")
 

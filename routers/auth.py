@@ -3,15 +3,13 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel
-
-# Импортируем limiter из main.py
 from main import limiter
-
 from models.database import get_db
 from models.models import User
 from schemas.user import UserResponse
 from schemas.token import TokenPayload
 from utils.dependencies import get_token_payload, get_current_user
+from config import settings
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
@@ -81,3 +79,36 @@ async def register_fcm_token(
     current_user.fcm_token = payload.token
     await db.commit()
     return {"status": "success"}
+
+
+@router.get("/me/subscription", response_model=dict)
+@limiter.limit("60/minute")
+async def get_my_subscription_status(
+        request: Request,
+        current_user: User = Depends(get_current_user),
+        db: AsyncSession = Depends(get_db)
+):
+    """
+    Возвращает информацию о текущей подписке пользователя,
+    количестве используемых аккаунтов и доступных лимитах.
+    """
+    status = current_user.subscription_status
+    ends_at = current_user.subscription_ends_at
+
+    # Считаем, сколько аккаунтов уже подключено
+    from .allegro import count_user_allegro_accounts  # Локальный импорт, чтобы избежать циклических зависимостей
+    used_accounts = await count_user_allegro_accounts(db, current_user.id)
+
+    limit = None  # None означает "неограниченно"
+
+    if status == 'free':
+        limit = settings.SUB_LIMIT_FREE
+    elif status == 'pro':
+        limit = settings.SUB_LIMIT_PRO
+
+    return {
+        "status": status,
+        "ends_at": ends_at,
+        "used_accounts": used_accounts,
+        "limit": limit
+    }
