@@ -12,6 +12,7 @@ from starlette.middleware.httpsredirect import HTTPSRedirectMiddleware
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy import text
 
 from routers import auth, allegro, conversations, webhooks
 from services.auto_responder_service import AutoResponderService
@@ -32,17 +33,41 @@ engine = create_async_engine(settings.DATABASE_URL)
 AsyncSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, class_=AsyncSession)
 scheduler = AsyncIOScheduler()
 
-async def run_auto_responder_task():
-    """Функция-обертка для запуска сервиса автоответчика."""
-    logger.info("Планировщик запускает задачу автоответчика...")
+
+async def run_task_producer():
+    """
+    Функция-ПРОИЗВОДИТЕЛЬ. Быстро получает ID всех аккаунтов
+    и добавляет их в очередь задач.
+    """
+    logger.info("Планировщик запускает задачу 'Производителя'...")
     db_session = AsyncSessionLocal()
     try:
-        service = AutoResponderService(db=db_session)
-        await service.run_auto_responder()
+        # 1. Получаем ID всех активных аккаунтов
+        result = await db_session.execute(text("SELECT id FROM allegro_accounts;"))
+        account_ids = result.scalars().all()
+
+        if not account_ids:
+            logger.info("Нет аккаунтов для обработки.")
+            return
+
+        # 2. Добавляем ID в нашу новую таблицу-очередь
+        for acc_id in account_ids:
+            # Не добавляем задачу, если для этого аккаунта уже есть ожидающая задача
+            insert_stmt = text("""
+                INSERT INTO task_queue (allegro_account_id, status)
+                VALUES (:acc_id, 'pending')
+                ON CONFLICT (allegro_account_id) DO NOTHING;
+            """)
+            await db_session.execute(insert_stmt, {"acc_id": acc_id})
+
+        await db_session.commit()
+        logger.info(f"Добавлено {len(account_ids)} задач в очередь.")
+
     except Exception as e:
-        logger.error(f"Ошибка в автоответчике: {e}", exc_info=True)
+        logger.error(f"Ошибка в 'Производителе' задач: {e}", exc_info=True)
     finally:
         await db_session.close()
+
 
 async def run_cleanup_task():
     """Функция-обертка для запуска сервиса очистки."""
@@ -56,10 +81,11 @@ async def run_cleanup_task():
     finally:
         await db_session.close()
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Запуск при старте приложения
-    scheduler.add_job(run_auto_responder_task, 'interval', minutes=5, id="auto_responder_job")
+    scheduler.add_job(run_task_producer, 'interval', minutes=5, id="task_producer_job")
     scheduler.add_job(run_cleanup_task, 'cron', hour=3, minute=0, id="cleanup_job")
     scheduler.start()
     logger.info("Планировщик задач запущен")
@@ -67,6 +93,7 @@ async def lifespan(app: FastAPI):
     # Остановка при завершении приложения
     scheduler.shutdown()
     logger.info("Планировщик задач остановлен")
+
 
 # Создание приложения
 app = FastAPI(
@@ -100,6 +127,7 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type", "Accept"],
 )
 
+
 # Глобальный обработчик ошибок
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
@@ -112,13 +140,6 @@ async def global_exception_handler(request: Request, exc: Exception):
     # В режиме отладки показываем ошибку
     raise exc
 
-# Отладочный эндпоинт (только для разработки)
-if settings.DEBUG:
-    @app.get("/debug/run-responder")
-    async def debug_run_responder():
-        """Немедленно запускает задачу автоответчика."""
-        await run_auto_responder_task()
-        return {"message": "Auto-responder task has been triggered successfully."}
 
 # Подключение роутеров
 app.include_router(auth.router)
@@ -126,10 +147,12 @@ app.include_router(allegro.router)
 app.include_router(conversations.router)
 app.include_router(webhooks.router)
 
+
 @app.get("/")
 @limiter.limit("100/minute")
 async def root(request: Request):
     return {"message": "Allegro Connect API is running", "version": "1.0.0"}
+
 
 @app.get("/health")
 @limiter.limit("100/minute")
