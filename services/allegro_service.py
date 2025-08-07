@@ -25,12 +25,7 @@ class AllegroService:
         return f"{self.auth_url}/authorize?{urlencode(params)}"
 
     async def get_allegro_tokens(self, code: str) -> dict:
-        """Обменивает авторизационный код на токены доступа с подробным логгированием."""
-
-        # --- ОТЛАДОЧНЫЙ БЛОК ---
-        print("\n" + "=" * 50)
-        print("--- DEBUG: Вход в get_allegro_tokens ---")
-
+        """Обменивает авторизационный код на токены доступа."""
         auth_header = httpx.BasicAuth(self.client_id, self.client_secret)
         data = {
             "grant_type": "authorization_code",
@@ -38,34 +33,10 @@ class AllegroService:
             "redirect_uri": self.redirect_uri,
         }
 
-        print(f"URL для запроса токена: {self.auth_url}/token")
-        print(f"Отправляемые данные (data): {data}")
-        print(f"Client ID для Basic Auth: {self.client_id}")
-        # Из соображений безопасности не будем выводить полный Client Secret
-        print(f"Client Secret для Basic Auth: ...{self.client_secret[-4:]}")
-        print("=" * 50 + "\n")
-        # --- КОНЕЦ ОТЛАДОЧНОГО БЛОКА ---
-
         async with httpx.AsyncClient() as client:
             try:
+                # --- БЛОК С СЕКРЕТНЫМИ ДАННЫМИ УДАЛЕН ---
                 response = await client.post(f"{self.auth_url}/token", auth=auth_header, data=data)
-
-                # --- ОТЛАДОЧНЫЙ БЛОК ОТВЕТА ---
-                print("\n" + "=" * 50)
-                print("--- DEBUG: Ответ от Allegro ---")
-                print(f"Статус-код ответа: {response.status_code}")
-                try:
-                    # Пытаемся красиво напечатать JSON, если это возможно
-                    response_json = response.json()
-                    print("Тело ответа (JSON):")
-                    print(json.dumps(response_json, indent=2))
-                except json.JSONDecodeError:
-                    # Если ответ не JSON, печатаем как текст
-                    print("Тело ответа (не JSON):")
-                    print(response.text)
-                print("=" * 50 + "\n")
-                # --- КОНЕЦ ОТЛАДОЧНОГО БЛОКА ОТВЕТА ---
-
                 response.raise_for_status()
                 token_data = response.json()
 
@@ -75,10 +46,9 @@ class AllegroService:
                 return token_data
 
             except httpx.HTTPStatusError as e:
-                # Эта ошибка будет более информативной благодаря логам выше
+                # В лог теперь не попадут секретные данные из ответа
                 raise HTTPException(status_code=400, detail=f"HTTP Ошибка от Allegro: {e.response.text}")
 
-    # Остальная часть файла остается без изменений
     async def get_allegro_user_details(self, access_token: str) -> dict:
         headers = {"Authorization": f"Bearer {access_token}", "Accept": "application/vnd.allegro.public.v1+json"}
         async with httpx.AsyncClient() as client:
