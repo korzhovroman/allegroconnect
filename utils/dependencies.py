@@ -1,21 +1,26 @@
 # utils/dependencies.py
-
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from cachetools import TTLCache, cached
+
 from .auth import verify_token
 from models.database import get_db
-from models.models import User
-from services.user_service import UserService  
+from models.models import User, AllegroAccount, TeamMember, EmployeePermission
 from schemas.token import TokenPayload
 
-# Указываем FastAPI, откуда брать токен (из эндпоинта /api/auth/login)
+# --- 1. Создаем кеш ---
+# maxsize=1024: Хранить до 1024 записей о правах.
+# ttl=300: Каждая запись хранится 300 секунд (5 минут).
+permission_cache = TTLCache(maxsize=1024, ttl=300)
+
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/sync-user")
 
 
-# Провайдер для UserService
-def get_user_service() -> UserService:
+def get_user_service():
+    # ... (Этот код без изменений)
+    from services.user_service import UserService
     return UserService()
 
 
@@ -23,32 +28,81 @@ async def get_current_user(
         token: str = Depends(oauth2_scheme),
         db: AsyncSession = Depends(get_db),
 ) -> User:
+    # ... (Этот код без изменений)
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
-
     token_data = verify_token(token, credentials_exception)
-
     if token_data.sub is None:
         raise credentials_exception
-
-    # Ищем пользователя в НАШЕЙ БД по ID из токена Supabase
-    query = select(User).where(User.supabase_user_id == token_data.sub)
-    result = await db.execute(query)
-    user = result.scalar_one_or_none()
-
+    user = await db.scalar(select(User).where(User.supabase_user_id == token_data.sub))
     if user is None:
         raise credentials_exception
-
     return user
 
+
+# --- 2. НОВАЯ ЦЕНТРАЛИЗОВАННАЯ ФУНКЦИЯ ПРОВЕРКИ ПРАВ ---
+# Мы используем декоратор @cached, чтобы автоматически кешировать результат
+@cached(permission_cache)
+async def _check_permission_in_db(db: AsyncSession, user_id: int, allegro_account_id: int) -> bool:
+    """
+    Эта "приватная" функция реально лезет в БД. Ее результат будет закеширован.
+    Возвращает True, если доступ разрешен, иначе False.
+    """
+    # Проверка на владельца
+    account = await db.scalar(
+        select(AllegroAccount).where(
+            AllegroAccount.id == allegro_account_id,
+            AllegroAccount.owner_id == user_id
+        )
+    )
+    if account:
+        return True
+
+    # Проверка на сотрудника с правами
+    permission = await db.scalar(
+        select(EmployeePermission.id)
+        .join(TeamMember, TeamMember.id == EmployeePermission.member_id)
+        .where(
+            TeamMember.user_id == user_id,
+            EmployeePermission.allegro_account_id == allegro_account_id
+        )
+    )
+    if permission:
+        return True
+
+    return False
+
+
+async def get_authorized_allegro_account(
+        allegro_account_id: int,
+        current_user: User = Depends(get_current_user),
+        db: AsyncSession = Depends(get_db)
+) -> AllegroAccount:
+    """
+    Основная зависимость для эндпоинтов. Проверяет права доступа (с кешированием)
+    и возвращает объект AllegroAccount, если доступ разрешен.
+    """
+    has_permission = await _check_permission_in_db(db, current_user.id, allegro_account_id)
+
+    if not has_permission:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to access this Allegro account."
+        )
+
+    # Если права есть, получаем сам объект аккаунта (этот запрос быстрый)
+    account = await db.get(AllegroAccount, allegro_account_id)
+    if not account:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Allegro account not found.")
+
+    return account
+
+
 def get_premium_user(current_user: User = Depends(get_current_user)) -> User:
-    """
-    Проверяет, есть ли у текущего пользователя активная подписка.
-    Если нет - возвращает ошибку.
-    """
+    # ... (Этот код без изменений)
     if current_user.subscription_status not in ["trial", "pro", "maxi"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -56,11 +110,9 @@ def get_premium_user(current_user: User = Depends(get_current_user)) -> User:
         )
     return current_user
 
+
 def get_token_payload(token: str = Depends(oauth2_scheme)) -> TokenPayload:
-    """
-    Проверяет токен Supabase и возвращает его полезную нагрузку (payload).
-    Это правильная "обертка" для использования в FastAPI.
-    """
+    # ... (Этот код без изменений)
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
