@@ -2,13 +2,13 @@
 
 import httpx
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from models.models import User, AllegroAccount
-from utils.security import encrypt_data
+from utils.security import encrypt_data, decrypt_data
 from config import settings
 
 
@@ -25,29 +25,39 @@ class AllegroService:
         return f"{self.auth_url}/authorize?{urlencode(params)}"
 
     async def get_allegro_tokens(self, code: str) -> dict:
-        """Обменивает авторизационный код на токены доступа."""
         auth_header = httpx.BasicAuth(self.client_id, self.client_secret)
         data = {
             "grant_type": "authorization_code",
             "code": code,
             "redirect_uri": self.redirect_uri,
         }
-
         async with httpx.AsyncClient() as client:
             try:
-                # --- БЛОК С СЕКРЕТНЫМИ ДАННЫМИ УДАЛЕН ---
                 response = await client.post(f"{self.auth_url}/token", auth=auth_header, data=data)
                 response.raise_for_status()
                 token_data = response.json()
-
                 if 'access_token' not in token_data:
                     raise HTTPException(status_code=400, detail="Allegro не вернул 'access_token'.")
-
                 return token_data
-
             except httpx.HTTPStatusError as e:
-                # В лог теперь не попадут секретные данные из ответа
                 raise HTTPException(status_code=400, detail=f"HTTP Ошибка от Allegro: {e.response.text}")
+
+    # --- НОВЫЙ МЕТОД ДЛЯ ОБНОВЛЕНИЯ ТОКЕНА ---
+    async def refresh_tokens(self, refresh_token: str) -> dict | None:
+        """Обновляет access и refresh токены, используя старый refresh_token."""
+        auth_header = httpx.BasicAuth(self.client_id, self.client_secret)
+        data = {
+            "grant_type": "refresh_token",
+            "refresh_token": refresh_token
+        }
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(f"{self.auth_url}/token", auth=auth_header, data=data)
+                response.raise_for_status()
+                return response.json()
+        except httpx.HTTPStatusError as e:
+            print(f"Не удалось обновить токен Allegro: {e.response.text}")
+            return None
 
     async def get_allegro_user_details(self, access_token: str) -> dict:
         headers = {"Authorization": f"Bearer {access_token}", "Accept": "application/vnd.allegro.public.v1+json"}
@@ -72,7 +82,7 @@ class AllegroService:
 
         encrypted_access_token = encrypt_data(access_token)
         encrypted_refresh_token = encrypt_data(refresh_token)
-        expires_at = datetime.utcnow() + timedelta(seconds=expires_in)
+        expires_at = datetime.now(timezone.utc) + timedelta(seconds=int(expires_in))
 
         result = await db.execute(select(AllegroAccount).filter_by(owner_id=user.id, allegro_user_id=allegro_user_id))
         db_account = result.scalar_one_or_none()
@@ -95,8 +105,3 @@ class AllegroService:
         await db.commit()
         await db.refresh(db_account)
         return db_account
-
-async def get_allegro_account_by_user_id(user_id: int, db: AsyncSession) -> AllegroAccount | None:
-    query = select(AllegroAccount).where(AllegroAccount.owner_id == user_id)
-    result = await db.execute(query)
-    return result.scalar_one_or_none()
