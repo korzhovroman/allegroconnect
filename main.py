@@ -88,6 +88,13 @@ async def lifespan(app: FastAPI):
     # Запуск при старте приложения
     scheduler.add_job(run_task_producer, 'interval', minutes=5, id="task_producer_job")
     scheduler.add_job(run_cleanup_task, 'cron', hour=3, minute=0, id="cleanup_job")
+    scheduler.add_job(
+        AutoResponderService(db=AsyncSessionLocal()).cleanup_old_message_metadata,
+        'cron',
+        hour=3,
+        minute=30,  # Запускаем через 30 минут после другой очистки
+        id="cleanup_metadata_job"
+    )
     scheduler.start()
     logger.info("Планировщик задач запущен")
     yield

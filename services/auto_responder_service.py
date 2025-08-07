@@ -113,3 +113,20 @@ class AutoResponderService:
         except Exception as e:
             print(f"ОШИБКА во время очистки логов: {e}")
             await self.db.rollback()
+
+        # --- МЕТОД ДЛЯ ОЧИСТКИ МЕТАДАННЫХ СООБЩЕНИЙ ---
+
+    async def cleanup_old_message_metadata(self):
+        """Удаляет записи из метаданных сообщений старше 90 дней."""
+        # Вы можете выбрать любой период, например, 90, 120 или 180 дней.
+        retention_period_days = 90
+        ninety_days_ago = datetime.now(timezone.utc) - timedelta(days=retention_period_days)
+
+        try:
+            stmt = delete(MessageMetadata).where(MessageMetadata.sent_at < ninety_days_ago)
+            result = await self.db.execute(stmt)
+            await self.db.commit()
+            print(f"--- Очистка метаданных сообщений завершена. Удалено {result.rowcount} старых записей. ---")
+        except Exception as e:
+            print(f"ОШИБКА во время очистки метаданных сообщений: {e}")
+            await self.db.rollback()
