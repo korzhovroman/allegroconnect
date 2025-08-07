@@ -5,7 +5,7 @@ from sqlalchemy import select
 from pydantic import BaseModel
 from main import limiter
 from models.database import get_db
-from models.models import User
+from models.models import User, Team, TeamMember  # <-- 1. Импортируем Team и TeamMember
 from schemas.user import UserResponse
 from schemas.token import TokenPayload
 from utils.dependencies import get_token_payload, get_current_user
@@ -13,19 +13,22 @@ from config import settings
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
+
 class FCMTokenPayload(BaseModel):
     token: str
 
+
 @router.post("/sync-user", response_model=UserResponse, status_code=status.HTTP_200_OK)
-@limiter.limit("10/minute") # Ограничение: 10 запросов в минуту с одного IP
+@limiter.limit("10/minute")
 async def sync_supabase_user(
-    request: Request, # <-- Добавляем request для работы limiter'а
-    db: AsyncSession = Depends(get_db),
-    token_payload: TokenPayload = Depends(get_token_payload)
+        request: Request,
+        db: AsyncSession = Depends(get_db),
+        token_payload: TokenPayload = Depends(get_token_payload)
 ):
     """
     Безопасная синхронизация. supabase_user_id - главный ключ.
     Предотвращает захват аккаунта через старый email.
+    При создании нового пользователя автоматически создает для него команду.
     """
     if not token_payload.sub or not token_payload.email:
         raise HTTPException(
@@ -42,7 +45,8 @@ async def sync_supabase_user(
             await db.refresh(user)
         return user
 
-    existing_user_by_email = (await db.execute(select(User).where(User.email == token_payload.email))).scalar_one_or_none()
+    existing_user_by_email = (
+        await db.execute(select(User).where(User.email == token_payload.email))).scalar_one_or_none()
 
     if existing_user_by_email:
         if existing_user_by_email.supabase_user_id is not None:
@@ -56,24 +60,46 @@ async def sync_supabase_user(
             await db.refresh(existing_user_by_email)
             return existing_user_by_email
 
+    # --- ЛОГИКА СОЗДАНИЯ КОМАНДЫ ДЛЯ НОВОГО ПОЛЬЗОВАТЕЛЯ ---
+    # Шаг 1: Создаем нового пользователя
     new_user = User(
         supabase_user_id=token_payload.sub,
         email=token_payload.email,
-        hashed_password="not_used"
+        hashed_password="not_used"  # Пароль не используется при входе через Supabase
     )
     db.add(new_user)
+    await db.flush()  # Получаем ID пользователя до коммита
+
+    # Шаг 2: Создаем для него команду
+    new_team = Team(
+        owner_id=new_user.id
+        # Имя команды будет 'Моя команда' по умолчанию из модели
+    )
+    db.add(new_team)
+    await db.flush()  # Получаем ID команды до коммита
+
+    # Шаг 3: Делаем самого пользователя участником его же команды с ролью 'owner'
+    owner_membership = TeamMember(
+        user_id=new_user.id,
+        team_id=new_team.id,
+        role='owner'
+    )
+    db.add(owner_membership)
+
+    # Шаг 4: Сохраняем все изменения в базе данных
     await db.commit()
     await db.refresh(new_user)
+
     return new_user
 
 
 @router.post("/register-fcm-token", status_code=status.HTTP_200_OK)
-@limiter.limit("20/minute") # Ограничение на регистрацию токена
+@limiter.limit("20/minute")
 async def register_fcm_token(
-    request: Request, # <-- Добавляем request
-    payload: FCMTokenPayload,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+        request: Request,
+        payload: FCMTokenPayload,
+        db: AsyncSession = Depends(get_db),
+        current_user: User = Depends(get_current_user)
 ):
     """Сохраняет или обновляет FCM токен для текущего пользователя."""
     current_user.fcm_token = payload.token
@@ -95,11 +121,10 @@ async def get_my_subscription_status(
     status = current_user.subscription_status
     ends_at = current_user.subscription_ends_at
 
-    # Считаем, сколько аккаунтов уже подключено
-    from .allegro import count_user_allegro_accounts  # Локальный импорт, чтобы избежать циклических зависимостей
+    from .allegro import count_user_allegro_accounts
     used_accounts = await count_user_allegro_accounts(db, current_user.id)
 
-    limit = None  # None означает "неограниченно"
+    limit = None
 
     if status == 'free':
         limit = settings.SUB_LIMIT_FREE
