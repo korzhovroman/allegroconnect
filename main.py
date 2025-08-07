@@ -2,22 +2,20 @@
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
-from starlette.middleware.httpsredirect import HTTPSRedirectMiddleware
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import text
 
-from routers import auth, allegro, conversations, webhooks
+from routers import auth, allegro, conversations, webhooks, teams
 from services.auto_responder_service import AutoResponderService
 from config import settings
-from routers import teams
 
 # Настройка логирования
 logging.basicConfig(
@@ -43,7 +41,6 @@ async def run_task_producer():
     logger.info("Планировщик запускает задачу 'Производителя'...")
     db_session = AsyncSessionLocal()
     try:
-        # 1. Получаем ID всех активных аккаунтов
         result = await db_session.execute(text("SELECT id FROM allegro_accounts;"))
         account_ids = result.scalars().all()
 
@@ -51,9 +48,7 @@ async def run_task_producer():
             logger.info("Нет аккаунтов для обработки.")
             return
 
-        # 2. Добавляем ID в нашу новую таблицу-очередь
         for acc_id in account_ids:
-            # Не добавляем задачу, если для этого аккаунта уже есть ожидающая задача
             insert_stmt = text("""
                 INSERT INTO task_queue (allegro_account_id, status)
                 VALUES (:acc_id, 'pending')
@@ -71,7 +66,7 @@ async def run_task_producer():
 
 
 async def run_cleanup_task():
-    """Функция-обертка для запуска сервиса очистки."""
+    """Функция-обертка для запуска сервиса очистки логов."""
     logger.info("Планировщик запускает задачу очистки логов...")
     db_session = AsyncSessionLocal()
     try:
@@ -81,6 +76,7 @@ async def run_cleanup_task():
         logger.error(f"Ошибка при очистке логов: {e}", exc_info=True)
     finally:
         await db_session.close()
+
 
 async def run_cleanup_metadata_task():
     """Функция-обертка для запуска очистки метаданных сообщений."""
@@ -94,18 +90,13 @@ async def run_cleanup_metadata_task():
     finally:
         await db_session.close()
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Запуск при старте приложения
     scheduler.add_job(run_task_producer, 'interval', minutes=5, id="task_producer_job")
     scheduler.add_job(run_cleanup_task, 'cron', hour=3, minute=0, id="cleanup_job")
-    scheduler.add_job(
-        AutoResponderService(db=AsyncSessionLocal()).cleanup_old_message_metadata,
-        'cron',
-        hour=3,
-        minute=30,  # Запускаем через 30 минут после другой очистки
-        id="cleanup_metadata_job"
-    )
+    scheduler.add_job(run_cleanup_metadata_task, 'cron', hour=3, minute=30, id="cleanup_metadata_job")
     scheduler.start()
     logger.info("Планировщик задач запущен")
     yield
@@ -129,6 +120,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Безопасность: HTTPS redirect в production
 if not settings.DEBUG:
+    from starlette.middleware.httpsredirect import HTTPSRedirectMiddleware
     app.add_middleware(HTTPSRedirectMiddleware)
 
 # Безопасные CORS настройки
@@ -151,13 +143,10 @@ app.add_middleware(
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     logger.error(f"Необработанная ошибка: {exc} at {request.method} {request.url}", exc_info=True)
-    if not settings.DEBUG:
-        return JSONResponse(
-            status_code=500,
-            content={"detail": "Internal server error"}
-        )
-    # В режиме отладки показываем ошибку
-    raise exc
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error"}
+    )
 
 
 # Подключение роутеров
@@ -168,13 +157,11 @@ app.include_router(webhooks.router)
 app.include_router(teams.router)
 
 @app.get("/")
-@limiter.limit("100/minute")
-async def root(request: Request):
-    return {"message": "Allegro Connect API is running", "version": "1.0.0"}
+async def root():
+    return {"message": "Allegro Connect API is running"}
 
 
 @app.get("/health")
-@limiter.limit("100/minute")
-async def health_check(request: Request):
+async def health_check():
     """Health check endpoint для мониторинга."""
     return {"status": "healthy", "timestamp": datetime.now(timezone.utc).isoformat()}
