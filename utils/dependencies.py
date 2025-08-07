@@ -9,12 +9,13 @@ from .auth import verify_token
 from models.database import get_db
 from models.models import User, AllegroAccount, TeamMember, EmployeePermission
 from schemas.token import TokenPayload
+from asyncio import Lock
 
 # --- 1. Создаем кеш ---
 # maxsize=1024: Хранить до 1024 записей о правах.
 # ttl=300: Каждая запись хранится 300 секунд (5 минут).
 permission_cache = TTLCache(maxsize=1024, ttl=300)
-
+cache_lock = Lock()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/sync-user")
 
 
@@ -106,30 +107,45 @@ async def get_authorized_allegro_account(
         db: AsyncSession = Depends(get_db)
 ) -> AllegroAccount:
     """
-    Основная зависимость. Проверяет права доступа (с РУЧНЫМ кешированием)
+    Основная зависимость. Проверяет права доступа с атомарным кешированием
     и возвращает объект AllegroAccount, если доступ разрешен.
     """
-    # Создаем уникальный ключ для кеша
     cache_key = (current_user.id, allegro_account_id)
 
-    # Шаг 1: Проверяем, есть ли результат в кеше
+    # Быстрая проверка кеша без блокировки
     if cache_key in permission_cache:
-        has_permission = permission_cache[cache_key]
-    else:
-        # Шаг 2: Если в кеше нет, лезем в базу данных
+        if permission_cache[cache_key]:
+            account_obj = await db.get(AllegroAccount, allegro_account_id)
+            if account_obj:
+                return account_obj
+        else: # Если в кеше явно указано, что доступа нет
+             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied by cache.")
+
+    # Если в кеше нет, используем блокировку для предотвращения race condition
+    async with cache_lock:
+        # Повторная проверка кеша внутри блокировки на случай, если другой поток уже записал значение
+        if cache_key in permission_cache:
+            if permission_cache[cache_key]:
+                account_obj = await db.get(AllegroAccount, allegro_account_id)
+                if account_obj:
+                    return account_obj
+            else:
+                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied by cache.")
+
+        # Если в кеше все еще нет, лезем в базу данных
         # Проверка на владельца
         account = await db.scalar(select(AllegroAccount.id).where(AllegroAccount.id == allegro_account_id,
                                                                   AllegroAccount.owner_id == current_user.id))
-        if account:
-            has_permission = True
-        else:
-            # Проверка на сотрудника с правами
+        has_permission = bool(account)
+
+        # Если не владелец, проверка на сотрудника
+        if not has_permission:
             permission = await db.scalar(
                 select(EmployeePermission.id).join(TeamMember).where(TeamMember.user_id == current_user.id,
                                                                      EmployeePermission.allegro_account_id == allegro_account_id))
             has_permission = bool(permission)
 
-        # Шаг 3: Сохраняем результат в кеш
+        # Сохраняем результат в кеш
         permission_cache[cache_key] = has_permission
 
     if not has_permission:
@@ -137,12 +153,11 @@ async def get_authorized_allegro_account(
                             detail="You do not have permission to access this Allegro account.")
 
     # Если права есть, получаем сам объект аккаунта
-    account_obj = await db.get(AllegroAccount, allegro_account_id)
-    if not account_obj:
+    final_account_obj = await db.get(AllegroAccount, allegro_account_id)
+    if not final_account_obj:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Allegro account not found.")
 
-    return account_obj
-
+    return final_account_obj
 
 def get_premium_user(current_user: User = Depends(get_current_user)) -> User:
     # ... (Этот код без изменений)

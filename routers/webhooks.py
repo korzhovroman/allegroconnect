@@ -8,7 +8,7 @@ from typing import Dict, Any
 from models.database import get_db
 from models.models import User
 from config import settings
-
+from utils.security import safe_compare
 router = APIRouter(prefix="/webhooks", tags=["Webhooks"])
 
 # --- Модели для данных от RevenueCat ---
@@ -30,8 +30,8 @@ async def handle_revenuecat_webhook(
     authorization: str | None = Header(None),
     db: AsyncSession = Depends(get_db)
 ):
-    # 1. Проверяем "секретное слово" (токен)
-    if not authorization or authorization != f"Bearer {settings.REVENUECAT_WEBHOOK_TOKEN}":
+    expected_token = f"Bearer {settings.REVENUECAT_WEBHOOK_TOKEN}"
+    if not authorization or not safe_compare(authorization, expected_token):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
     # 2. Ищем пользователя по его ID, который пришел от RevenueCat

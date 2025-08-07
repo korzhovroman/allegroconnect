@@ -1,7 +1,6 @@
+import hmac
 from cryptography.fernet import Fernet
 from passlib.context import CryptContext
-
-# 1. Импортируем наш центральный объект настроек
 from config import settings
 
 # --- Хеширование паролей ---
@@ -16,6 +15,11 @@ def hash_password(password: str) -> str:
     """Возвращает хеш для пароля."""
     return pwd_context.hash(password)
 
+def safe_compare(a: str, b: str) -> bool:
+    """
+    Безопасное сравнение строк, устойчивое к атакам по времени.
+    """
+    return hmac.compare_digest(a.encode('utf-8'), b.encode('utf-8'))
 
 # --- Шифрование данных (для токенов Allegro) ---
 # 2. Инициализируем Fernet с ключом из настроек
