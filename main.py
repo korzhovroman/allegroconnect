@@ -17,6 +17,7 @@ from sqlalchemy import text
 from routers import auth, allegro, conversations, webhooks
 from services.auto_responder_service import AutoResponderService
 from config import settings
+from routers import teams
 
 # Настройка логирования
 logging.basicConfig(
@@ -146,7 +147,7 @@ app.include_router(auth.router)
 app.include_router(allegro.router)
 app.include_router(conversations.router)
 app.include_router(webhooks.router)
-
+app.include_router(teams.router)
 
 @app.get("/")
 @limiter.limit("100/minute")

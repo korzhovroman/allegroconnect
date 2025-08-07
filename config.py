@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     # --- КЛЮЧ ДЛЯ REVENUECAT ---
     REVENUECAT_WEBHOOK_TOKEN: str
 
+    SUPABASE_URL: str
+    SUPABASE_SERVICE_KEY: str
+
     # --- Лимиты подписок ---
     # Эти значения можно переопределить в .env файле, если нужно
     SUB_LIMIT_FREE: int = 1
