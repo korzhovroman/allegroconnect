@@ -3,9 +3,10 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload, joinedload
 from supabase import create_client, Client
-
+from typing import List
+from utils.dependencies import require_maxi_plan
 from config import settings
 from models.database import get_db
 from models.models import User, Team, TeamMember, EmployeePermission, AllegroAccount
@@ -17,7 +18,7 @@ supabase_admin: Client = create_client(settings.SUPABASE_URL, settings.SUPABASE_
 router = APIRouter(prefix="/api/teams", tags=["Teams"])
 
 
-# --- Модели для запросов ---
+# --- Модели для запросов и ответов ---
 
 class EmployeeInvite(BaseModel):
     email: EmailStr
@@ -29,15 +30,56 @@ class PermissionGrant(BaseModel):
     allegro_account_id: int
 
 
+class TeamMemberOut(BaseModel):
+    member_id: int  # ID из таблицы TeamMember
+    user_id: int
+    email: EmailStr
+    name: str | None
+    role: str
+
+    class Config:
+        from_attributes = True
+
+
 # --- Эндпоинты ---
+
+@router.get("/members", response_model=List[TeamMemberOut], summary="Получить список всех участников команды")
+async def get_team_members(
+        db: AsyncSession = Depends(get_db),
+        current_user: User = Depends(require_maxi_plan)
+):
+    """
+    Возвращает список всех участников (включая владельца)
+    текущей команды пользователя.
+    """
+    if not current_user.team_membership:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Вы не состоите ни в одной команде.")
+
+    team_id = current_user.team_membership.team_id
+
+    query = select(TeamMember).options(joinedload(TeamMember.user)).where(TeamMember.team_id == team_id)
+    result = await db.execute(query)
+    members = result.scalars().all()
+
+    response_data = []
+    for member in members:
+        response_data.append({
+            "member_id": member.id,
+            "user_id": member.user.id,
+            "email": member.user.email,
+            "name": member.user.name,
+            "role": member.role
+        })
+
+    return response_data
+
 
 @router.post("/invite", status_code=status.HTTP_201_CREATED, summary="Пригласить сотрудника в команду")
 async def invite_employee(
         payload: EmployeeInvite,
         db: AsyncSession = Depends(get_db),
-        current_user: User = Depends(get_current_user)
+        current_user: User = Depends(require_maxi_plan)
 ):
-    # ... (код этого эндпоинта без изменений)
     if not current_user.owned_team:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
                             detail="Только владелец команды может приглашать сотрудников.")
@@ -67,9 +109,8 @@ async def invite_employee(
 async def grant_permission(
         payload: PermissionGrant,
         db: AsyncSession = Depends(get_db),
-        current_user: User = Depends(get_current_user)
+        current_user: User = Depends(require_maxi_plan)
 ):
-    # ... (код этого эндпоинта без изменений)
     if not current_user.owned_team:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Только владелец может управлять правами.")
     allegro_account = await db.scalar(select(AllegroAccount).where(AllegroAccount.id == payload.allegro_account_id,
@@ -98,9 +139,8 @@ async def grant_permission(
 async def revoke_permission(
         payload: PermissionGrant,
         db: AsyncSession = Depends(get_db),
-        current_user: User = Depends(get_current_user)
+        current_user: User = Depends(require_maxi_plan)
 ):
-    # ... (код этого эндпоинта без изменений)
     if not current_user.owned_team or current_user.owned_team.id != (
     await db.scalar(select(TeamMember.team_id).where(TeamMember.id == payload.member_id))):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Недостаточно прав для выполнения операции.")
@@ -113,56 +153,31 @@ async def revoke_permission(
     return {"status": "success", "message": "Разрешение успешно отозвано."}
 
 
-# --- НОВЫЙ ЭНДПОИНТ ДЛЯ УДАЛЕНИЯ СОТРУДНИКА ---
 @router.delete("/members/{member_id}", status_code=status.HTTP_200_OK, summary="Удалить сотрудника из команды")
 async def delete_employee(
         member_id: int,
         db: AsyncSession = Depends(get_db),
-        current_user: User = Depends(get_current_user)
+        current_user: User = Depends(require_maxi_plan)
 ):
-    """
-    Полностью удаляет сотрудника: из команды, из локальной БД и из Supabase Auth.
-    """
-    # Шаг 1: Проверка, что текущий пользователь - владелец
     if not current_user.owned_team:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Только владелец может удалять сотрудников.")
-
-    # Шаг 2: Найти участника команды и убедиться, что он в команде владельца
-    # selectinload('user') заранее подгружает связанного пользователя, чтобы избежать лишних запросов
     member_to_delete = await db.scalar(
-        select(TeamMember).options(selectinload(TeamMember.user)).where(
-            TeamMember.id == member_id,
-            TeamMember.team_id == current_user.owned_team.id
-        )
-    )
-
+        select(TeamMember).options(selectinload(TeamMember.user)).where(TeamMember.id == member_id,
+                                                                        TeamMember.team_id == current_user.owned_team.id))
     if not member_to_delete:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Сотрудник не найден в вашей команде.")
-
     if member_to_delete.role == 'owner':
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Нельзя удалить владельца команды.")
-
-    # Шаг 3: Сохраняем Supabase ID пользователя ПЕРЕД удалением
     supabase_user_id_to_delete = member_to_delete.user.supabase_user_id
-
-    # Шаг 4: Удаляем пользователя из НАШЕЙ базы данных.
-    # Благодаря 'ON DELETE CASCADE' в схеме БД, это автоматически удалит
-    # запись из 'team_members' и все его 'employee_permissions'.
     user_to_delete = member_to_delete.user
     await db.delete(user_to_delete)
     await db.commit()
-
-    # Шаг 5: Удаляем пользователя из системы аутентификации Supabase
     if supabase_user_id_to_delete:
         try:
             supabase_admin.auth.admin.delete_user(supabase_user_id_to_delete)
         except Exception as e:
-            # Важно: даже если удаление в Supabase не удалось, мы не откатываем удаление из нашей БД.
-            # Логируем ошибку, чтобы разобраться с ней вручную.
             print(
                 f"КРИТИЧЕСКАЯ ОШИБКА: Не удалось удалить пользователя {supabase_user_id_to_delete} из Supabase Auth: {e}")
-            # Можно вернуть предупреждение во фронтенд
             return {"status": "warning",
                     "message": "Сотрудник удален из команды, но его аккаунт не удалось полностью деактивировать."}
-
     return {"status": "success", "message": "Сотрудник успешно удален."}

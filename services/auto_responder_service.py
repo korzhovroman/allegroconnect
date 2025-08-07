@@ -2,7 +2,8 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 from datetime import datetime, timedelta, timezone
-from models.models import AllegroAccount, AutoReplyLog, User
+from models.models import AllegroAccount, AutoReplyLog, User, \
+    MessageMetadata  # Убедитесь, что MessageMetadata импортирована
 from services.allegro_client import AllegroClient
 from services.notification_service import send_notification
 from utils.security import decrypt_data
@@ -16,42 +17,34 @@ class AutoResponderService:
         """
         Обрабатывает один конкретный аккаунт Allegro. Вызывается воркером.
         """
-        # Исправленный запрос, который выбирает все необходимые поля
-        query = select(
-            AllegroAccount.id,
-            AllegroAccount.allegro_login,
-            AllegroAccount.auto_reply_enabled,
-            AllegroAccount.auto_reply_text,
-            AllegroAccount.access_token,
-            User.fcm_token
-        ).join(User, AllegroAccount.owner_id == User.id).where(AllegroAccount.id == account_id)
+        # --- ИСПРАВЛЕНИЕ ЗДЕСЬ ---
+        # Шаг 1: Получаем ПОЛНЫЙ объект аккаунта из БД, включая данные его владельца (для fcm_token)
+        query = select(AllegroAccount).join(User, AllegroAccount.owner_id == User.id).where(
+            AllegroAccount.id == account_id)
+        allegro_account = (await self.db.execute(query)).scalar_one_or_none()
 
-        result = await self.db.execute(query)
-        account_data = result.mappings().first()
-
-        if not account_data:
+        if not allegro_account:
             print(f"Аккаунт с ID {account_id} не найден.")
             return
 
-        # Теперь все ключи будут на месте
-        account_login = account_data["allegro_login"]
-        fcm_token = account_data["fcm_token"]
-        auto_reply_enabled = account_data["auto_reply_enabled"]
-        reply_text = account_data["auto_reply_text"]
+        # Шаг 2: Создаем клиент ПРАВИЛЬНЫМ способом, передавая сессию и весь объект
+        client = AllegroClient(db=self.db, allegro_account=allegro_account)
+
+        account_login = allegro_account.allegro_login
+        fcm_token = allegro_account.owner.fcm_token  # Получаем fcm_token через связь
+        auto_reply_enabled = allegro_account.auto_reply_enabled
+        reply_text = allegro_account.auto_reply_text
 
         print(f"Обрабатываем аккаунт: {account_login} (ID: {account_id})")
 
         try:
-            access_token = decrypt_data(account_data["access_token"])
-            client = AllegroClient(access_token)
+            # Теперь все запросы к client будут автоматически обновлять токен при необходимости
             threads_data = await client.get_threads(limit=20, offset=0)
             threads = threads_data.get('threads', [])
 
             for thread in threads:
                 if not thread.get('read', True) and await self._is_new_message_from_buyer(client, thread, account_id):
                     print(f"  -> Обнаружен новый непрочитанный диалог {thread['id']}.")
-
-                    # Отправляем PUSH-уведомление
                     if fcm_token:
                         try:
                             interlocutor = thread.get('interlocutor', {}).get('login', 'Покупатель')
@@ -60,31 +53,20 @@ class AutoResponderService:
                             send_notification(token=fcm_token, title=title, body=body)
                         except Exception as e:
                             print(f"  ОШИБКА при отправке PUSH: {e}")
-
-                    # Отправляем автоответ, если включен
                     if auto_reply_enabled and reply_text:
                         print(f"  -> Автоответчик включен. Отправляем ответ.")
                         await client.post_thread_message(thread['id'], reply_text)
-
-                    # Логируем, чтобы не обработать снова
                     await self._log_conversation_as_processed(thread['id'], account_id)
                     print(f"  -> Диалог {thread['id']} помечен как обработанный.")
-
         except Exception as e:
             print(f"  ОШИБКА при обработке аккаунта {account_login}: {e}")
 
     async def _is_new_message_from_buyer(self, client: AllegroClient, thread: dict, account_id: int) -> bool:
-        """
-        Проверяет, не обработан ли диалог нами ранее И является ли последнее сообщение от покупателя.
-        """
         thread_id = thread['id']
-        log_entry = await self.db.execute(select(AutoReplyLog).where(
-            AutoReplyLog.conversation_id == thread_id,
-            AutoReplyLog.allegro_account_id == account_id
-        ))
+        log_entry = await self.db.execute(select(AutoReplyLog).where(AutoReplyLog.conversation_id == thread_id,
+                                                                     AutoReplyLog.allegro_account_id == account_id))
         if log_entry.scalar_one_or_none():
             return False
-
         try:
             messages_data = await client.get_thread_messages(thread_id, limit=1)
             if not messages_data.get('messages'):
@@ -94,7 +76,6 @@ class AutoResponderService:
                 return True
         except Exception:
             return False
-
         return False
 
     async def _log_conversation_as_processed(self, thread_id: str, account_id: int):
@@ -103,25 +84,19 @@ class AutoResponderService:
         await self.db.commit()
 
     async def cleanup_old_logs(self):
-        """Удаляет записи из лога автоответчика старше 30 дней."""
         try:
             thirty_days_ago = datetime.now(timezone.utc) - timedelta(days=30)
             stmt = delete(AutoReplyLog).where(AutoReplyLog.reply_time < thirty_days_ago)
             result = await self.db.execute(stmt)
             await self.db.commit()
-            print(f"--- Очистка логов завершена. Удалено {result.rowcount} старых записей. ---")
+            print(f"--- Очистка логов автоответчика завершена. Удалено {result.rowcount} старых записей. ---")
         except Exception as e:
-            print(f"ОШИБКА во время очистки логов: {e}")
+            print(f"ОШИБКА во время очистки логов автоответчика: {e}")
             await self.db.rollback()
 
-        # --- МЕТОД ДЛЯ ОЧИСТКИ МЕТАДАННЫХ СООБЩЕНИЙ ---
-
     async def cleanup_old_message_metadata(self):
-        """Удаляет записи из метаданных сообщений старше 90 дней."""
-        # Вы можете выбрать любой период, например, 90, 120 или 180 дней.
         retention_period_days = 90
         ninety_days_ago = datetime.now(timezone.utc) - timedelta(days=retention_period_days)
-
         try:
             stmt = delete(MessageMetadata).where(MessageMetadata.sent_at < ninety_days_ago)
             result = await self.db.execute(stmt)

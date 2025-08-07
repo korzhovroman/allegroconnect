@@ -82,6 +82,17 @@ async def run_cleanup_task():
     finally:
         await db_session.close()
 
+async def run_cleanup_metadata_task():
+    """Функция-обертка для запуска очистки метаданных сообщений."""
+    logger.info("Планировщик запускает задачу очистки метаданных...")
+    db_session = AsyncSessionLocal()
+    try:
+        service = AutoResponderService(db=db_session)
+        await service.cleanup_old_message_metadata()
+    except Exception as e:
+        logger.error(f"Ошибка при очистке метаданных: {e}", exc_info=True)
+    finally:
+        await db_session.close()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

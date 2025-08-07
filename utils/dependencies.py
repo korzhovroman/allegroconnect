@@ -4,7 +4,7 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from cachetools import TTLCache, cached
-
+from typing import List
 from .auth import verify_token
 from models.database import get_db
 from models.models import User, AllegroAccount, TeamMember, EmployeePermission
@@ -23,6 +23,30 @@ def get_user_service():
     from services.user_service import UserService
     return UserService()
 
+
+def plan_checker(allowed_plans: List[str]):
+    """
+    Это "фабрика", которая создает зависимость для проверки подписки.
+    """
+
+    async def check_subscription(current_user: User = Depends(get_current_user)) -> User:
+        """
+        Сама зависимость, которая будет проверять план пользователя.
+        """
+        # Можно добавить 'trial', если триал дает доступ ко всем функциям
+        if current_user.subscription_status not in allowed_plans:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"This feature is only available for the following plans: {', '.join(allowed_plans)}."
+            )
+        return current_user
+
+    return check_subscription
+
+
+# Создаем конкретные зависимости для каждого плана
+require_pro_plan = plan_checker(["pro", "maxi", "trial"])
+require_maxi_plan = plan_checker(["maxi", "trial"])
 
 async def get_current_user(
         token: str = Depends(oauth2_scheme),
@@ -82,23 +106,42 @@ async def get_authorized_allegro_account(
         db: AsyncSession = Depends(get_db)
 ) -> AllegroAccount:
     """
-    Основная зависимость для эндпоинтов. Проверяет права доступа (с кешированием)
+    Основная зависимость. Проверяет права доступа (с РУЧНЫМ кешированием)
     и возвращает объект AllegroAccount, если доступ разрешен.
     """
-    has_permission = await _check_permission_in_db(db, current_user.id, allegro_account_id)
+    # Создаем уникальный ключ для кеша
+    cache_key = (current_user.id, allegro_account_id)
+
+    # Шаг 1: Проверяем, есть ли результат в кеше
+    if cache_key in permission_cache:
+        has_permission = permission_cache[cache_key]
+    else:
+        # Шаг 2: Если в кеше нет, лезем в базу данных
+        # Проверка на владельца
+        account = await db.scalar(select(AllegroAccount.id).where(AllegroAccount.id == allegro_account_id,
+                                                                  AllegroAccount.owner_id == current_user.id))
+        if account:
+            has_permission = True
+        else:
+            # Проверка на сотрудника с правами
+            permission = await db.scalar(
+                select(EmployeePermission.id).join(TeamMember).where(TeamMember.user_id == current_user.id,
+                                                                     EmployeePermission.allegro_account_id == allegro_account_id))
+            has_permission = bool(permission)
+
+        # Шаг 3: Сохраняем результат в кеш
+        permission_cache[cache_key] = has_permission
 
     if not has_permission:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have permission to access this Allegro account."
-        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="You do not have permission to access this Allegro account.")
 
-    # Если права есть, получаем сам объект аккаунта (этот запрос быстрый)
-    account = await db.get(AllegroAccount, allegro_account_id)
-    if not account:
+    # Если права есть, получаем сам объект аккаунта
+    account_obj = await db.get(AllegroAccount, allegro_account_id)
+    if not account_obj:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Allegro account not found.")
 
-    return account
+    return account_obj
 
 
 def get_premium_user(current_user: User = Depends(get_current_user)) -> User:
