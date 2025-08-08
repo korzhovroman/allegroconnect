@@ -3,6 +3,7 @@
 import os
 from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from cryptography.fernet import Fernet
 
 # Определяем путь к корневой папке проекта
 ROOT_DIR = Path(__file__).parent.resolve()
@@ -55,6 +56,18 @@ class Settings(BaseSettings):
 
 # Создаем единственный экземпляр настроек
 settings = Settings()
+
+
+def model_post_init(self, __context):
+    """Проверяем формат ключей после инициализации"""
+    # Проверяем, что ENCRYPTION_KEY валидный для Fernet
+    try:
+        Fernet(self.ENCRYPTION_KEY.encode())
+    except Exception:
+        raise ValueError(
+            "ENCRYPTION_KEY должен быть валидным Fernet ключом. "
+            "Сгенерируйте новый: python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'"
+        )
 
 # Проверка на наличие критически важных ключей
 if not settings.SECRET_KEY or not settings.ENCRYPTION_KEY:

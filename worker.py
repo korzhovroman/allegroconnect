@@ -29,7 +29,6 @@ async def process_single_task(task_id: int, account_id: int):
     """
     Обрабатывает ОДНУ задачу. (Этот код без изменений)
     """
-    # ... (весь ваш существующий код этой функции)
     db_session = AsyncSessionLocal()
     service = AutoResponderService(db=db_session)
     try:
@@ -52,48 +51,53 @@ async def process_single_task(task_id: int, account_id: int):
         await db_session.close()
 
 
+async def get_next_task(db: AsyncSession):
+    """Атомарно получает и блокирует следующую задачу для обработки"""
+    stmt = text("""
+        UPDATE task_queue 
+        SET status = 'processing', processed_at = NOW()
+        WHERE id = (
+            SELECT id FROM task_queue 
+            WHERE status = 'pending' 
+            ORDER BY created_at 
+            LIMIT 1 
+            FOR UPDATE SKIP LOCKED
+        )
+        RETURNING id, allegro_account_id;
+    """)
+    result = await db.execute(stmt)
+    return result.fetchone()
+
+
 async def main_loop():
-    """
-    Бесконечный цикл воркера, который теперь слушает событие остановки.
-    """
+    """Основной цикл воркера с исправленной обработкой задач"""
     logger.info("Воркер запущен и готов к работе.")
-    # --- ИЗМЕНЕНИЕ ЗДЕСЬ: Цикл работает, пока событие не установлено ---
+
     while not shutdown_event.is_set():
         db = AsyncSessionLocal()
-        task_processed = False
         try:
-            # Ищем одну задачу
-            stmt = text("""
-                SELECT id, allegro_account_id FROM task_queue
-                WHERE status = 'pending' ORDER BY created_at LIMIT 1
-                FOR UPDATE SKIP LOCKED;
-            """)
-            result = await db.execute(stmt)
-            task = result.fetchone()
+            # Атомарно получаем следующую задачу
+            task = await get_next_task(db)
+            await db.commit()  # Коммитим блокировку задачи
 
             if task:
                 task_id, account_id = task
-                task_processed = True # Флаг, что мы нашли задачу
+                logger.info(f"Взял в обработку задачу #{task_id} для аккаунта #{account_id}")
 
-                # Помечаем, что задача взята в работу
-                await db.execute(text("UPDATE task_queue SET status = 'processing' WHERE id = :id"), {"id": task_id})
-                await db.commit()
-
-                # Запускаем обработку
+                # Обрабатываем задачу
                 await process_single_task(task_id, account_id)
+            else:
+                # Если задач нет, ждем
+                try:
+                    await asyncio.wait_for(shutdown_event.wait(), timeout=10)
+                except asyncio.TimeoutError:
+                    pass
+
         except Exception as e:
             logger.error(f"Критическая ошибка в главном цикле воркера: {e}", exc_info=True)
             await asyncio.sleep(15)
         finally:
             await db.close()
-
-        # Если задач не было, немного ждем, чтобы не нагружать БД
-        if not task_processed:
-            try:
-                # --- ИЗМЕНЕНИЕ ЗДЕСЬ: Ждем события или таймаута ---
-                await asyncio.wait_for(shutdown_event.wait(), timeout=10)
-            except asyncio.TimeoutError:
-                pass # Это нормальное поведение, просто продолжаем цикл
 
     logger.info("Воркер завершает работу.")
 

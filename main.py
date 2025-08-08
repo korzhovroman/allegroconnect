@@ -17,6 +17,7 @@ from sqlalchemy import text
 from routers import auth, allegro, conversations, webhooks, teams
 from services.auto_responder_service import AutoResponderService
 from config import settings
+from utils.rate_limiter import limiter
 
 # Настройка логирования
 structlog.configure(
@@ -102,6 +103,11 @@ async def run_cleanup_metadata_task():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # ДОБАВИТЬ: Создание таблиц при старте
+    from models.database import create_tables
+    from models import models  # Импортируем модели для регистрации
+    await create_tables()
+
     # Запуск при старте приложения
     scheduler.add_job(run_task_producer, 'interval', minutes=5, id="task_producer_job")
     scheduler.add_job(run_cleanup_task, 'cron', hour=3, minute=0, id="cleanup_job")
