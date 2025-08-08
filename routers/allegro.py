@@ -1,9 +1,9 @@
 # routers/allegro.py
-
 from fastapi import APIRouter, Depends, Query, HTTPException, status, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from schemas.allegro import AllegroAccountOut
+from schemas.api import APIResponse
 from urllib.parse import urlencode
 from typing import List
 from sqlalchemy import select, func
@@ -14,8 +14,6 @@ from services.allegro_service import AllegroService
 from services.user_service import UserService
 from utils.dependencies import get_current_user, get_user_service
 from utils.auth import create_state_token, verify_state_token
-
-# Импортируем limiter из main.py
 from main import limiter
 
 
@@ -43,8 +41,8 @@ async def get_user_allegro_accounts(db: AsyncSession, user_id: int) -> List[Alle
 router = APIRouter(prefix="/api/allegro", tags=["Allegro"])
 
 
-@router.get("/auth/url")
-@limiter.limit("20/minute")  # Ограничение на инициирование авторизации
+@router.get("/auth/url", response_model=APIResponse[dict])
+@limiter.limit("20/minute")
 async def get_allegro_auth_url(
         request: Request,
         current_user: User = Depends(get_current_user),
@@ -52,11 +50,11 @@ async def get_allegro_auth_url(
 ):
     state_token = create_state_token(user_id=current_user.id)
     auth_url = allegro_service.get_authorization_url()
-    return {"authorization_url": f"{auth_url}&state={state_token}"}
+    return APIResponse(data={"authorization_url": f"{auth_url}&state={state_token}"})
 
 
 @router.get("/auth/callback")
-@limiter.limit("20/minute")  # Ограничение на коллбэк
+@limiter.limit("20/minute")
 async def allegro_auth_callback(
         request: Request,
         code: str = Query(...),
@@ -103,16 +101,18 @@ async def allegro_auth_callback(
         params = urlencode({"error": e.detail})
         return RedirectResponse(url=f"{redirect_url}?{params}")
     except Exception as e:
+        from main import logger
+        logger.error("Ошибка в коллбэке Allegro", error=str(e), exc_info=True)
         params = urlencode({"error": "Произошла внутренняя ошибка сервера."})
         return RedirectResponse(url=f"{redirect_url}?{params}")
 
 
-@router.get("/accounts", response_model=List[AllegroAccountOut])
-@limiter.limit("100/minute")  # Стандартное ограничение для GET-запросов
+@router.get("/accounts", response_model=APIResponse[List[AllegroAccountOut]])
+@limiter.limit("100/minute")
 async def list_user_allegro_accounts(
         request: Request,
         current_user: User = Depends(get_current_user),
         db: AsyncSession = Depends(get_db)
 ):
     accounts = await get_user_allegro_accounts(db=db, user_id=current_user.id)
-    return accounts
+    return APIResponse(data=accounts)

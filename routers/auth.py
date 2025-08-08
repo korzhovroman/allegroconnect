@@ -5,9 +5,10 @@ from sqlalchemy import select
 from pydantic import BaseModel
 from main import limiter
 from models.database import get_db
-from models.models import User, Team, TeamMember  # <-- 1. Импортируем Team и TeamMember
+from models.models import User, Team, TeamMember
 from schemas.user import UserResponse
 from schemas.token import TokenPayload
+from schemas.api import APIResponse
 from utils.dependencies import get_token_payload, get_current_user
 from config import settings
 
@@ -18,7 +19,7 @@ class FCMTokenPayload(BaseModel):
     token: str
 
 
-@router.post("/sync-user", response_model=UserResponse, status_code=status.HTTP_200_OK)
+@router.post("/sync-user", response_model=APIResponse[UserResponse], status_code=status.HTTP_200_OK)
 @limiter.limit("10/minute")
 async def sync_supabase_user(
         request: Request,
@@ -43,7 +44,7 @@ async def sync_supabase_user(
             user.email = token_payload.email
             await db.commit()
             await db.refresh(user)
-        return user
+        return APIResponse(data=user)
 
     existing_user_by_email = (
         await db.execute(select(User).where(User.email == token_payload.email))).scalar_one_or_none()
@@ -58,27 +59,22 @@ async def sync_supabase_user(
             existing_user_by_email.supabase_user_id = token_payload.sub
             await db.commit()
             await db.refresh(existing_user_by_email)
-            return existing_user_by_email
+            return APIResponse(data=existing_user_by_email)
 
-    # --- ЛОГИКА СОЗДАНИЯ КОМАНДЫ ДЛЯ НОВОГО ПОЛЬЗОВАТЕЛЯ ---
-    # Шаг 1: Создаем нового пользователя
     new_user = User(
         supabase_user_id=token_payload.sub,
         email=token_payload.email,
-        hashed_password="not_used"  # Пароль не используется при входе через Supabase
+        hashed_password="not_used"
     )
     db.add(new_user)
-    await db.flush()  # Получаем ID пользователя до коммита
+    await db.flush()
 
-    # Шаг 2: Создаем для него команду
     new_team = Team(
         owner_id=new_user.id
-        # Имя команды будет 'Моя команда' по умолчанию из модели
     )
     db.add(new_team)
-    await db.flush()  # Получаем ID команды до коммита
+    await db.flush()
 
-    # Шаг 3: Делаем самого пользователя участником его же команды с ролью 'owner'
     owner_membership = TeamMember(
         user_id=new_user.id,
         team_id=new_team.id,
@@ -86,14 +82,13 @@ async def sync_supabase_user(
     )
     db.add(owner_membership)
 
-    # Шаг 4: Сохраняем все изменения в базе данных
     await db.commit()
     await db.refresh(new_user)
 
-    return new_user
+    return APIResponse(data=new_user)
 
 
-@router.post("/register-fcm-token", status_code=status.HTTP_200_OK)
+@router.post("/register-fcm-token", response_model=APIResponse[dict], status_code=status.HTTP_200_OK)
 @limiter.limit("20/minute")
 async def register_fcm_token(
         request: Request,
@@ -104,10 +99,10 @@ async def register_fcm_token(
     """Сохраняет или обновляет FCM токен для текущего пользователя."""
     current_user.fcm_token = payload.token
     await db.commit()
-    return {"status": "success"}
+    return APIResponse(data={"status": "success"})
 
 
-@router.get("/me/subscription", response_model=dict)
+@router.get("/me/subscription", response_model=APIResponse[dict])
 @limiter.limit("60/minute")
 async def get_my_subscription_status(
         request: Request,
@@ -118,7 +113,7 @@ async def get_my_subscription_status(
     Возвращает информацию о текущей подписке пользователя,
     количестве используемых аккаунтов и доступных лимитах.
     """
-    status = current_user.subscription_status
+    status_val = current_user.subscription_status
     ends_at = current_user.subscription_ends_at
 
     from .allegro import count_user_allegro_accounts
@@ -126,14 +121,15 @@ async def get_my_subscription_status(
 
     limit = None
 
-    if status == 'free':
+    if status_val == 'free':
         limit = settings.SUB_LIMIT_FREE
-    elif status == 'pro':
+    elif status_val == 'pro':
         limit = settings.SUB_LIMIT_PRO
 
-    return {
-        "status": status,
+    subscription_data = {
+        "status": status_val,
         "ends_at": ends_at,
         "used_accounts": used_accounts,
         "limit": limit
     }
+    return APIResponse(data=subscription_data)

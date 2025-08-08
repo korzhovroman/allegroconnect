@@ -11,14 +11,13 @@ from config import settings
 from models.database import get_db
 from models.models import User, Team, TeamMember, EmployeePermission, AllegroAccount
 from utils.dependencies import get_current_user
+from schemas.api import APIResponse
+from main import logger
 
-# Инициализируем админ-клиент Supabase
 supabase_admin: Client = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_KEY)
 
 router = APIRouter(prefix="/api/teams", tags=["Teams"])
 
-
-# --- Модели для запросов и ответов ---
 
 class EmployeeInvite(BaseModel):
     email: EmailStr
@@ -31,7 +30,7 @@ class PermissionGrant(BaseModel):
 
 
 class TeamMemberOut(BaseModel):
-    member_id: int  # ID из таблицы TeamMember
+    member_id: int
     user_id: int
     email: EmailStr
     name: str | None
@@ -41,17 +40,12 @@ class TeamMemberOut(BaseModel):
         from_attributes = True
 
 
-# --- Эндпоинты ---
-
-@router.get("/members", response_model=List[TeamMemberOut], summary="Получить список всех участников команды")
+@router.get("/members", response_model=APIResponse[List[TeamMemberOut]],
+            summary="Получить список всех участников команды")
 async def get_team_members(
         db: AsyncSession = Depends(get_db),
         current_user: User = Depends(require_maxi_plan)
 ):
-    """
-    Возвращает список всех участников (включая владельца)
-    текущей команды пользователя.
-    """
     if not current_user.team_membership:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Вы не состоите ни в одной команде.")
 
@@ -63,18 +57,21 @@ async def get_team_members(
 
     response_data = []
     for member in members:
-        response_data.append({
-            "member_id": member.id,
-            "user_id": member.user.id,
-            "email": member.user.email,
-            "name": member.user.name,
-            "role": member.role
-        })
+        response_data.append(
+            TeamMemberOut(
+                member_id=member.id,
+                user_id=member.user.id,
+                email=member.user.email,
+                name=member.user.name,
+                role=member.role
+            )
+        )
 
-    return response_data
+    return APIResponse(data=response_data)
 
 
-@router.post("/invite", status_code=status.HTTP_201_CREATED, summary="Пригласить сотрудника в команду")
+@router.post("/invite", response_model=APIResponse[dict], status_code=status.HTTP_201_CREATED,
+             summary="Пригласить сотрудника в команду")
 async def invite_employee(
         payload: EmployeeInvite,
         db: AsyncSession = Depends(get_db),
@@ -102,10 +99,11 @@ async def invite_employee(
     new_team_member = TeamMember(user_id=new_local_user.id, team_id=current_user.owned_team.id, role='employee')
     db.add(new_team_member)
     await db.commit()
-    return {"status": "success", "message": f"Приглашение отправлено на {payload.email}"}
+    return APIResponse(data={"status": "success", "message": f"Приглашение отправлено на {payload.email}"})
 
 
-@router.post("/permissions", status_code=status.HTTP_201_CREATED, summary="Выдать сотруднику доступ к аккаунту Allegro")
+@router.post("/permissions", response_model=APIResponse[dict], status_code=status.HTTP_201_CREATED,
+             summary="Выдать сотруднику доступ к аккаунту Allegro")
 async def grant_permission(
         payload: PermissionGrant,
         db: AsyncSession = Depends(get_db),
@@ -131,29 +129,31 @@ async def grant_permission(
     new_permission = EmployeePermission(member_id=payload.member_id, allegro_account_id=payload.allegro_account_id)
     db.add(new_permission)
     await db.commit()
-    return {"status": "success", "message": "Разрешение успешно выдано."}
+    return APIResponse(data={"status": "success", "message": "Разрешение успешно выдано."})
 
 
-@router.delete("/permissions", status_code=status.HTTP_200_OK,
+@router.delete("/permissions", response_model=APIResponse[dict], status_code=status.HTTP_200_OK,
                summary="Отозвать у сотрудника доступ к аккаунту Allegro")
 async def revoke_permission(
         payload: PermissionGrant,
         db: AsyncSession = Depends(get_db),
         current_user: User = Depends(require_maxi_plan)
 ):
-    if not current_user.owned_team or current_user.owned_team.id != (
-    await db.scalar(select(TeamMember.team_id).where(TeamMember.id == payload.member_id))):
+    member = await db.scalar(select(TeamMember).where(TeamMember.id == payload.member_id))
+    if not current_user.owned_team or not member or current_user.owned_team.id != member.team_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Недостаточно прав для выполнения операции.")
+
     stmt = delete(EmployeePermission).where(EmployeePermission.member_id == payload.member_id,
                                             EmployeePermission.allegro_account_id == payload.allegro_account_id)
     result = await db.execute(stmt)
     await db.commit()
     if result.rowcount == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Указанное разрешение не найдено.")
-    return {"status": "success", "message": "Разрешение успешно отозвано."}
+    return APIResponse(data={"status": "success", "message": "Разрешение успешно отозвано."})
 
 
-@router.delete("/members/{member_id}", status_code=status.HTTP_200_OK, summary="Удалить сотрудника из команды")
+@router.delete("/members/{member_id}", response_model=APIResponse[dict], status_code=status.HTTP_200_OK,
+               summary="Удалить сотрудника из команды")
 async def delete_employee(
         member_id: int,
         db: AsyncSession = Depends(get_db),
@@ -170,14 +170,14 @@ async def delete_employee(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Нельзя удалить владельца команды.")
     supabase_user_id_to_delete = member_to_delete.user.supabase_user_id
     user_to_delete = member_to_delete.user
-    await db.delete(user_to_delete)
+    await db.delete(user_to_delete)  # Удаление каскадом удалит и TeamMember
     await db.commit()
     if supabase_user_id_to_delete:
         try:
             supabase_admin.auth.admin.delete_user(supabase_user_id_to_delete)
         except Exception as e:
-            print(
-                f"КРИТИЧЕСКАЯ ОШИБКА: Не удалось удалить пользователя {supabase_user_id_to_delete} из Supabase Auth: {e}")
-            return {"status": "warning",
-                    "message": "Сотрудник удален из команды, но его аккаунт не удалось полностью деактивировать."}
-    return {"status": "success", "message": "Сотрудник успешно удален."}
+            logger.error("Не удалось удалить пользователя из Supabase Auth", user_id=supabase_user_id_to_delete,
+                         error=str(e))
+            return APIResponse(data={"status": "warning",
+                                     "message": "Сотрудник удален из команды, но его аккаунт не удалось полностью деактивировать."})
+    return APIResponse(data={"status": "success", "message": "Сотрудник успешно удален."})

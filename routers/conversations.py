@@ -2,6 +2,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from schemas.message import MessageCreate
+from schemas.api import APIResponse
 from services.allegro_client import AllegroClient
 from utils.dependencies import get_authorized_allegro_account
 from models.models import AllegroAccount
@@ -10,8 +11,7 @@ from datetime import datetime
 from pydantic import BaseModel
 from schemas.allegro import AllegroAccountSettingsUpdate, AllegroAccountOut
 from sqlalchemy import select
-
-from main import limiter
+from main import limiter, logger
 
 class AttachmentDeclare(BaseModel):
     file_name: str
@@ -20,8 +20,7 @@ class AttachmentDeclare(BaseModel):
 router = APIRouter(prefix="/api/allegro", tags=["Allegro Actions"])
 
 
-# ---  ЭНДПОИНТ ТОЛЬКО ДЛЯ СООБЩЕНИЙ (THREADS) ---
-@router.get("/{allegro_account_id}/threads", response_model=dict, summary="Получить только диалоги (threads)")
+@router.get("/{allegro_account_id}/threads", response_model=APIResponse[dict], summary="Получить только диалоги (threads)")
 @limiter.limit("100/minute")
 async def get_allegro_threads(
     request: Request,
@@ -32,11 +31,11 @@ async def get_allegro_threads(
 ):
     """Возвращает список только обычных диалогов (threads)."""
     client = AllegroClient(db=db, allegro_account=allegro_account)
-    return await client.get_threads(limit=limit, offset=offset)
+    data = await client.get_threads(limit=limit, offset=offset)
+    return APIResponse(data=data)
 
 
-# ---  ЭНДПОИНТ ТОЛЬКО ДЛЯ ОБСУЖДЕНИЙ (ISSUES) ---
-@router.get("/{allegro_account_id}/issues", response_model=dict, summary="Получить только обсуждения (issues)")
+@router.get("/{allegro_account_id}/issues", response_model=APIResponse[dict], summary="Получить только обсуждения (issues)")
 @limiter.limit("100/minute")
 async def get_allegro_issues(
     request: Request,
@@ -47,11 +46,11 @@ async def get_allegro_issues(
 ):
     """Возвращает список только обсуждений и претензий (issues)."""
     client = AllegroClient(db=db, allegro_account=allegro_account)
-    return await client.get_issues(limit=limit, offset=offset)
+    data = await client.get_issues(limit=limit, offset=offset)
+    return APIResponse(data=data)
 
 
-# --- ОБЪЕДИНЕННЫЙ ЭНДПОИНТ ДЛЯ ФРОНТЕНДА (ОПЦИОНАЛЬНО) ---
-@router.get("/{allegro_account_id}/conversations", response_model=dict, summary="Получить все диалоги и обсуждения вместе")
+@router.get("/{allegro_account_id}/conversations", response_model=APIResponse[dict], summary="Получить все диалоги и обсуждения вместе")
 @limiter.limit("100/minute")
 async def get_all_conversations(
         request: Request,
@@ -60,10 +59,6 @@ async def get_all_conversations(
         offset: int = Query(0, ge=0),
         db: AsyncSession = Depends(get_db)
 ):
-    """
-    Получает и объединяет обычные сообщения (threads) и обсуждения/претензии (issues),
-    сортируя их по дате последнего сообщения.
-    """
     client = AllegroClient(db=db, allegro_account=allegro_account)
     all_conversations = []
     errors = []
@@ -79,7 +74,7 @@ async def get_all_conversations(
                 "interlocutor": thread.get('interlocutor')
             })
     except Exception as e:
-        print(f"ERROR fetching threads: {e}")
+        logger.error("Ошибка получения threads", error=str(e))
         errors.append("Could not fetch regular messages.")
 
     try:
@@ -93,7 +88,7 @@ async def get_all_conversations(
                 "subject": issue.get('subject')
             })
     except Exception as e:
-        print(f"ERROR fetching issues: {e}")
+        logger.error("Ошибка получения issues", error=str(e))
         errors.append("Could not fetch discussions and claims (Allegro internal error).")
 
     all_conversations.sort(
@@ -101,10 +96,11 @@ async def get_all_conversations(
         reverse=True
     )
 
-    return {"conversations": all_conversations, "errors": errors}
+    data = {"conversations": all_conversations, "errors": errors}
+    return APIResponse(data=data)
 
 
-@router.get("/{allegro_account_id}/threads/{thread_id}/messages", response_model=dict, summary="Получить сообщения из диалога")
+@router.get("/{allegro_account_id}/threads/{thread_id}/messages", response_model=APIResponse[dict], summary="Получить сообщения из диалога")
 @limiter.limit("100/minute")
 async def get_allegro_thread_messages(
     request: Request,
@@ -113,9 +109,10 @@ async def get_allegro_thread_messages(
     db: AsyncSession = Depends(get_db)
 ):
     client = AllegroClient(db=db, allegro_account=allegro_account)
-    return await client.get_thread_messages(thread_id=thread_id)
+    data = await client.get_thread_messages(thread_id=thread_id)
+    return APIResponse(data=data)
 
-@router.post("/{allegro_account_id}/threads/{thread_id}/messages", status_code=status.HTTP_201_CREATED, summary="Отправить сообщение в диалог")
+@router.post("/{allegro_account_id}/threads/{thread_id}/messages", response_model=APIResponse[dict], status_code=status.HTTP_201_CREATED, summary="Отправить сообщение в диалог")
 @limiter.limit("60/minute")
 async def post_allegro_thread_message(
     request: Request,
@@ -125,11 +122,11 @@ async def post_allegro_thread_message(
     db: AsyncSession = Depends(get_db)
 ):
     client = AllegroClient(db=db, allegro_account=allegro_account)
-    return await client.post_thread_message(thread_id=thread_id, text=message.text, attachment_id=message.attachment_id)
+    data = await client.post_thread_message(thread_id=thread_id, text=message.text, attachment_id=message.attachment_id)
+    return APIResponse(data=data)
 
 
-# --- Эндпоинты для ISSUES (Обсуждения) ---
-@router.get("/{allegro_account_id}/issues/{issue_id}/messages", response_model=dict, summary="Получить сообщения из обсуждения")
+@router.get("/{allegro_account_id}/issues/{issue_id}/messages", response_model=APIResponse[dict], summary="Получить сообщения из обсуждения")
 @limiter.limit("100/minute")
 async def get_allegro_issue_messages(
     request: Request,
@@ -138,9 +135,10 @@ async def get_allegro_issue_messages(
     db: AsyncSession = Depends(get_db)
 ):
     client = AllegroClient(db=db, allegro_account=allegro_account)
-    return await client.get_issue_messages(issue_id=issue_id)
+    data = await client.get_issue_messages(issue_id=issue_id)
+    return APIResponse(data=data)
 
-@router.post("/{allegro_account_id}/issues/{issue_id}/messages", status_code=status.HTTP_201_CREATED, summary="Отправить сообщение в обсуждение")
+@router.post("/{allegro_account_id}/issues/{issue_id}/messages", response_model=APIResponse[dict], status_code=status.HTTP_201_CREATED, summary="Отправить сообщение в обсуждение")
 @limiter.limit("60/minute")
 async def post_allegro_issue_message(
     request: Request,
@@ -150,11 +148,11 @@ async def post_allegro_issue_message(
     db: AsyncSession = Depends(get_db)
 ):
     client = AllegroClient(db=db, allegro_account=allegro_account)
-    return await client.post_issue_message(issue_id=issue_id, text=message.text)
+    data = await client.post_issue_message(issue_id=issue_id, text=message.text)
+    return APIResponse(data=data)
 
 
-# --- Настройки аккаунта ---
-@router.patch("/{allegro_account_id}/settings", response_model=AllegroAccountOut, summary="Изменить настройки автоответчика")
+@router.patch("/{allegro_account_id}/settings", response_model=APIResponse[AllegroAccountOut], summary="Изменить настройки автоответчика")
 @limiter.limit("30/minute")
 async def update_allegro_account_settings(
         request: Request,
@@ -168,10 +166,9 @@ async def update_allegro_account_settings(
 
     await db.commit()
     await db.refresh(allegro_account)
-    return allegro_account
+    return APIResponse(data=allegro_account)
 
-# --- Вспомогательные эндпоинты ---
-@router.post("/{allegro_account_id}/attachments/declare", response_model=dict, summary="Загрузить вложение для сообщения")
+@router.post("/{allegro_account_id}/attachments/declare", response_model=APIResponse[dict], summary="Загрузить вложение для сообщения")
 @limiter.limit("30/minute")
 async def declare_allegro_attachment(
     request: Request,
@@ -180,7 +177,8 @@ async def declare_allegro_attachment(
     db: AsyncSession = Depends(get_db)
 ):
     client = AllegroClient(db=db, allegro_account=allegro_account)
-    return await client.declare_attachment(
+    data = await client.declare_attachment(
         file_name=declaration.file_name,
         file_size=declaration.file_size
     )
+    return APIResponse(data=data)
