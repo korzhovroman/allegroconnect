@@ -1,15 +1,17 @@
 # schemas/allegro.py
-from pydantic import BaseModel
+from pydantic import BaseModel, Field # ИЗМЕНЕНО: импортируем Field
 from typing import Optional
 
 
 class AllegroAccountSettingsUpdate(BaseModel):
     auto_reply_enabled: Optional[bool] = None
-    auto_reply_text: Optional[str] = None
+    # ИЗМЕНЕНО: Добавляем ограничение на максимальную длину текста автоответчика.
+    # Это защищает базу данных от переполнения и обеспечивает предсказуемость.
+    auto_reply_text: Optional[str] = Field(None, max_length=1000)
 
 class AllegroAccountOut(BaseModel):
     id: int
     allegro_login: str
 
     class Config:
-        from_attributes = True # Для SQLAlchemy < 2.0 было orm_mode = True
+        from_attributes = True

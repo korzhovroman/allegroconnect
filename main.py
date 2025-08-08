@@ -6,8 +6,7 @@ from datetime import datetime, timezone
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
+from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
@@ -17,7 +16,7 @@ from sqlalchemy import text
 from routers import auth, allegro, conversations, webhooks, teams
 from services.auto_responder_service import AutoResponderService
 from config import settings
-from utils.rate_limiter import limiter
+from utils.rate_limiter import limiter # ИЗМЕНЕНО: Импортируем единственный экземпляр
 
 # Настройка логирования
 structlog.configure(
@@ -34,8 +33,8 @@ structlog.configure(
 # Привязываем стандартный логгер к structlog
 logger = structlog.get_logger()
 
-# Rate limiter (ограничитель частоты запросов)
-limiter = Limiter(key_func=get_remote_address)
+# ИЗМЕНЕНО: Повторная инициализация удалена. Используется импортированный экземпляр.
+# limiter = Limiter(key_func=get_remote_address) # <-- УДАЛЕНО
 
 # Асинхронная сессия для фоновых задач
 engine = create_async_engine(settings.DATABASE_URL)
@@ -157,14 +156,18 @@ app.add_middleware(
 # Глобальный обработчик ошибок
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    # Используем наш новый логгер
+    # ИЗМЕНЕНО: Более безопасное логирование.
+    # Мы логируем тип ошибки и ее сообщение, но избегаем полного exc_info в продакшене,
+    # чтобы случайно не записать в логи конфиденциальные данные.
     logger.error(
         "Unhandled exception",
-        exc_info=exc,
+        error_type=type(exc).__name__,
+        error_message=str(exc),
         method=str(request.method),
-        url=str(request.url)
+        url=str(request.url),
+        exc_info=settings.DEBUG  # Включаем полный traceback только в режиме DEBUG
     )
- # Возвращаем стандартизированный ответ об ошибке
+    # Возвращаем стандартизированный ответ об ошибке
     return JSONResponse(
         status_code=500,
         content=APIResponse(
@@ -173,6 +176,7 @@ async def global_exception_handler(request: Request, exc: Exception):
             error_code="INTERNAL_ERROR"
         ).model_dump()
     )
+
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):

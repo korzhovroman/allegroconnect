@@ -4,6 +4,7 @@ annotated-types==0.7.0
 anyio==3.7.1
 APScheduler==3.10.4
 arq==0.25.0
+async-lru==2.0.4  # ДОБАВЛЕНО: Для асинхронного кеширования
 asyncpg==0.30.0
 bcrypt==3.2.2
 CacheControl==0.14.3
