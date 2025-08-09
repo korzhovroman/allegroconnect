@@ -2,11 +2,11 @@
 import httpx
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
-from fastapi import HTTPException,
+from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from models.models import User, AllegroAccount
-from utils.security import encrypt_data,
+from utils.security import encrypt_data
 from config import settings
 
 
