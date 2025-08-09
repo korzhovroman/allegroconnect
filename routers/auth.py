@@ -119,12 +119,8 @@ async def get_my_subscription_status(
     from .allegro import count_user_allegro_accounts
     used_accounts = await count_user_allegro_accounts(db, current_user.id)
 
-    limit = None
+    limit = settings.SUB_LIMITS.get(status_val, 0)
 
-    if status_val == 'free':
-        limit = settings.SUB_LIMIT_FREE
-    elif status_val == 'pro':
-        limit = settings.SUB_LIMIT_PRO
 
     subscription_data = {
         "status": status_val,

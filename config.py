@@ -2,6 +2,7 @@
 
 import os
 from pathlib import Path
+from typing import Dict
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from cryptography.fernet import Fernet
 
@@ -14,45 +15,38 @@ class Settings(BaseSettings):
     Класс для управления настройками приложения.
     """
     model_config = SettingsConfigDict(env_file=os.path.join(ROOT_DIR, '.env'), env_file_encoding='utf-8')
-
     # --- Настройки режима работы ---
-    # По умолчанию выключено для безопасности.
-    # Для локальной разработки добавьте DEBUG=true в .env файл.
     DEBUG: bool = False
-
     # --- Настройки базы данных ---
     DATABASE_URL: str
-
     # --- Настройки безопасности и JWT ---
     SECRET_KEY: str
     ENCRYPTION_KEY: str
+    CSRF_SECRET_KEY: str
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
-
     # --- Настройки Allegro API ---
     ALLEGRO_CLIENT_ID: str
     ALLEGRO_CLIENT_SECRET: str
     ALLEGRO_REDIRECT_URI: str
     ALLEGRO_API_URL: str = "https://api.allegro.pl"
     ALLEGRO_AUTH_URL: str = "https://allegro.pl/auth/oauth"
-
     # --- Настройки фронтенда ---
     FRONTEND_URL: str
-
     # --- Настройки Supabase ---
     SUPABASE_JWT_SECRET: str
-
-    # --- КЛЮЧ ДЛЯ REVENUECAT ---
-    REVENUECAT_WEBHOOK_TOKEN: str
-
     SUPABASE_URL: str
     SUPABASE_SERVICE_KEY: str
-
+    # --- КЛЮЧ ДЛЯ REVENUECAT ---
+    REVENUECAT_WEBHOOK_TOKEN: str
     # --- Лимиты подписок ---
-    # Эти значения можно переопределить в .env файле, если нужно
-    SUB_LIMIT_FREE: int = 1
-    SUB_LIMIT_PRO: int = 3
-    # Для Maxi и Trial лимит не ограничен, будем обрабатывать это в коде
+    SUB_LIMITS: Dict[str, int] = {
+        "free": 1,
+        "trial": 1,
+        "pro": 3,
+        "maxi": -1,
+        "canceled": -1  # Для отмененных подписок тоже сохраняем лимит до конца периода
+    }
 
 # Создаем единственный экземпляр настроек
 settings = Settings()

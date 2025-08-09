@@ -16,7 +16,9 @@ from sqlalchemy import text
 from routers import auth, allegro, conversations, webhooks, teams
 from services.auto_responder_service import AutoResponderService
 from config import settings
-from utils.rate_limiter import limiter # ИЗМЕНЕНО: Импортируем единственный экземпляр
+from utils.rate_limiter import limiter
+from fastapi_csrf_protect import CsrfProtect
+from fastapi_csrf_protect.exceptions import CsrfProtectError
 
 # Настройка логирования
 structlog.configure(
@@ -33,14 +35,17 @@ structlog.configure(
 # Привязываем стандартный логгер к structlog
 logger = structlog.get_logger()
 
-# ИЗМЕНЕНО: Повторная инициализация удалена. Используется импортированный экземпляр.
-# limiter = Limiter(key_func=get_remote_address) # <-- УДАЛЕНО
-
 # Асинхронная сессия для фоновых задач
 engine = create_async_engine(settings.DATABASE_URL)
 AsyncSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, class_=AsyncSession)
 scheduler = AsyncIOScheduler()
 
+class CsrfSettings(BaseModel):
+    secret_key: str
+
+@CsrfProtect.load_config
+def get_csrf_config():
+    return CsrfSettings(secret_key=settings.CSRF_SECRET_KEY)
 
 async def run_task_producer():
     """
@@ -177,6 +182,16 @@ async def global_exception_handler(request: Request, exc: Exception):
         ).model_dump()
     )
 
+@app.exception_handler(CsrfProtectError)
+def csrf_protect_exception_handler(request: Request, exc: CsrfProtectError):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=APIResponse(
+            success=False,
+            error_message=exc.message,
+            error_code="CSRF_ERROR"
+        ).model_dump()
+    )
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
@@ -195,6 +210,15 @@ app.include_router(allegro.router)
 app.include_router(conversations.router)
 app.include_router(webhooks.router)
 app.include_router(teams.router)
+
+@app.get("/api/csrf-token", response_model=APIResponse[dict])
+def get_csrf_token(csrf_protect: CsrfProtect = Depends()):
+    response = JSONResponse(
+        status_code=200,
+        content=APIResponse(data={"detail": "CSRF cookie set"}).model_dump()
+    )
+    csrf_protect.set_csrf_cookie(response)
+    return response
 
 @app.get("/")
 async def root():

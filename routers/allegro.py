@@ -74,6 +74,8 @@ async def allegro_auth_callback(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
     try:
+        current_status = user.subscription_status
+        limit = settings.SUB_LIMITS.get(current_status, 0)
         token_data = await allegro_service.get_allegro_tokens(code)
         allegro_user_data = await allegro_service.get_allegro_user_details(token_data['access_token'])
 
@@ -82,15 +84,11 @@ async def allegro_auth_callback(
         existing_account = (await db.execute(existing_account_query)).scalar_one_or_none()
 
         if not existing_account:
-            if user.subscription_status == 'pro':
+            if limit != -1:  # -1 означает безлимит
                 current_accounts_count = await count_user_allegro_accounts(db, user_id=user.id)
-                if current_accounts_count >= settings.SUB_LIMIT_PRO:
-                    error_params = urlencode({"error": "Достигнут лимит в 3 аккаунтов для подписки Pro."})
-                    return RedirectResponse(url=f"{redirect_url}?{error_params}")
-            elif user.subscription_status == 'free':
-                current_accounts_count = await count_user_allegro_accounts(db, user_id=user.id)
-                if current_accounts_count >= settings.SUB_LIMIT_FREE:
-                    error_params = urlencode({"error": "Бесплатный план позволяет добавить только 1 аккаунт."})
+                if current_accounts_count >= limit:
+                    error_message = f"Достигнут лимит в {limit} аккаунт(а) для вашего тарифа '{current_status}'."
+                    error_params = urlencode({"error": error_message})
                     return RedirectResponse(url=f"{redirect_url}?{error_params}")
 
         await allegro_service.create_or_update_account(db, user, allegro_user_data, token_data)
@@ -105,7 +103,6 @@ async def allegro_auth_callback(
         logger.error("Ошибка в коллбэке Allegro", error=str(e), exc_info=True)
         params = urlencode({"error": "Произошла внутренняя ошибка сервера."})
         return RedirectResponse(url=f"{redirect_url}?{params}")
-
 
 @router.get("/accounts", response_model=APIResponse[List[AllegroAccountOut]])
 @limiter.limit("100/minute")
