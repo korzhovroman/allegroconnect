@@ -10,7 +10,7 @@ from models.models import User
 from config import settings
 from utils.security import safe_compare
 from schemas.api import APIResponse
-from main import logger
+from utils.logger import logger
 
 router = APIRouter(prefix="/webhooks", tags=["Webhooks"])
 

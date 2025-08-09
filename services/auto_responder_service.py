@@ -7,7 +7,7 @@ from models.models import AllegroAccount, AutoReplyLog, User, MessageMetadata
 from services.allegro_client import AllegroClient
 from services.notification_service import send_notification
 from schemas.allegro_api import ThreadsResponse, MessagesResponse, AllegroThread
-from main import logger
+from utils.logger import logger
 
 class AutoResponderService:
     def __init__(self, db: AsyncSession):

@@ -14,7 +14,7 @@ from services.allegro_service import AllegroService
 from services.user_service import UserService
 from utils.dependencies import get_current_user, get_user_service
 from utils.auth import create_state_token, verify_state_token
-from main import limiter
+from utils.rate_limiter import limiter
 
 
 def get_allegro_service() -> AllegroService:
@@ -97,7 +97,7 @@ async def allegro_auth_callback(
         params = urlencode({"error": e.detail})
         return RedirectResponse(url=f"{redirect_url}?{params}")
     except Exception as e:
-        from main import logger
+        from utils.logger import logger
         logger.error("Ошибка в коллбэке Allegro", error=str(e), exc_info=True)
         error_message = "Wystąpił wewnętrzny błąd serwera."
         params = urlencode({"error": error_message})

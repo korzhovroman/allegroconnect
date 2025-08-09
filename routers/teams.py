@@ -10,10 +10,8 @@ from utils.dependencies import require_maxi_plan
 from config import settings
 from models.database import get_db
 from models.models import User, Team, TeamMember, EmployeePermission, AllegroAccount
-from utils.dependencies import get_current_user
 from schemas.api import APIResponse
-from main import logger
-
+from utils.logger import logger
 supabase_admin: Client = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_KEY)
 
 router = APIRouter(prefix="/api/teams", tags=["Teams"])

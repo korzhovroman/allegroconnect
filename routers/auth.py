@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel
-from main import limiter
+from utils.rate_limiter import limiter
 from models.database import get_db
 from models.models import User, Team, TeamMember
 from schemas.user import UserResponse

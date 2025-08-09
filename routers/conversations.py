@@ -10,8 +10,7 @@ from models.database import get_db
 from datetime import datetime
 from pydantic import BaseModel
 from schemas.allegro import AllegroAccountSettingsUpdate, AllegroAccountOut
-from sqlalchemy import select
-from main import limiter, logger
+from utils.rate_limiter import limiter
 
 class AttachmentDeclare(BaseModel):
     file_name: str
