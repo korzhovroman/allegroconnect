@@ -8,6 +8,8 @@ from sqlalchemy import text
 from config import settings
 from services.auto_responder_service import AutoResponderService
 
+print(f"WORKER SEES DATABASE_URL: {os.getenv('DATABASE_URL')}")
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - WORKER - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
