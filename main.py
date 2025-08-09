@@ -19,6 +19,7 @@ from config import settings
 from utils.rate_limiter import limiter
 from fastapi_csrf_protect import CsrfProtect
 from fastapi_csrf_protect.exceptions import CsrfProtectError
+from pydantic import BaseModel
 
 structlog.configure(
     processors=[
