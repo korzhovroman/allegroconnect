@@ -2,26 +2,21 @@ from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey, Bool
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from .database import Base
-from datetime import datetime
-
 
 class Team(Base):
     __tablename__ = 'teams'
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False, default="Моя команда")
     owner_id = Column(Integer, ForeignKey('users.id', ondelete="CASCADE"), nullable=False, unique=True)
-
     owner = relationship("User", back_populates="owned_team")
     members = relationship("TeamMember", back_populates="team", cascade="all, delete-orphan")
-
 
 class TeamMember(Base):
     __tablename__ = 'team_members'
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey('users.id', ondelete="CASCADE"), nullable=False, unique=True)
     team_id = Column(Integer, ForeignKey('teams.id', ondelete="CASCADE"), nullable=False)
-    role = Column(String, default='employee', nullable=False)  # 'owner' или 'employee'
-
+    role = Column(String, default='employee', nullable=False)  
     user = relationship("User", back_populates="team_membership")
     team = relationship("Team", back_populates="members")
     permissions = relationship("EmployeePermission", back_populates="member", cascade="all, delete-orphan")
@@ -32,7 +27,6 @@ class EmployeePermission(Base):
     id = Column(Integer, primary_key=True, index=True)
     member_id = Column(Integer, ForeignKey('team_members.id', ondelete="CASCADE"), nullable=False)
     allegro_account_id = Column(Integer, ForeignKey('allegro_accounts.id', ondelete="CASCADE"), nullable=False)
-
     member = relationship("TeamMember", back_populates="permissions")
     allegro_account = relationship("AllegroAccount")
 
@@ -44,7 +38,6 @@ class MessageMetadata(Base):
     thread_id = Column(String, nullable=False, index=True)
     sent_by_user_id = Column(Integer, ForeignKey('users.id', ondelete="SET NULL"), nullable=True)
     sent_at = Column(DateTime(timezone=True), server_default=func.now())
-
     sender = relationship("User")
 
 
@@ -53,7 +46,7 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     supabase_user_id = Column(String, unique=True, index=True, nullable=True)
     email = Column(String, unique=True, index=True, nullable=False)
-    name = Column(String, nullable=True)  # Поле для имени/тега работника
+    name = Column(String, nullable=True) 
     hashed_password = Column(String, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     subscription_status = Column(String, default='free', nullable=False)
@@ -68,7 +61,7 @@ class AllegroAccount(Base):
     __tablename__ = "allegro_accounts"
     id = Column(Integer, primary_key=True, index=True)
     owner_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
-                      nullable=False)  # Теперь это владелец аккаунта/команды
+                      nullable=False)  
     allegro_user_id = Column(String, nullable=False)
     allegro_login = Column(String, nullable=False)
     access_token = Column(Text, nullable=False)
@@ -76,23 +69,18 @@ class AllegroAccount(Base):
     expires_at = Column(DateTime(timezone=True), nullable=False)
     auto_reply_enabled = Column(Boolean, default=False)
     auto_reply_text = Column(String, nullable=True)
-
     owner = relationship("User", back_populates="allegro_accounts")
 
 class AutoReplyLog(Base):
     __tablename__ = 'auto_reply_log'
-
-    # Составной первичный ключ, чтобы для каждого вашего аккаунта
-    # можно было отслеживать свои диалоги
     conversation_id = Column(String, primary_key=True)
     allegro_account_id = Column(Integer, ForeignKey('allegro_accounts.id'), primary_key=True)
     reply_time = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 class TaskQueue(Base):
     __tablename__ = 'task_queue'
-
     id = Column(Integer, primary_key=True, index=True)
     allegro_account_id = Column(Integer, ForeignKey('allegro_accounts.id', ondelete="CASCADE"), unique=True, nullable=False)
-    status = Column(String, default='pending', index=True) # pending, processing, done, failed
+    status = Column(String, default='pending', index=True) 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     processed_at = Column(DateTime(timezone=True), nullable=True)

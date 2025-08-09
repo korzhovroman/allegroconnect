@@ -1,14 +1,12 @@
 # services/allegro_service.py
-
 import httpx
-import json
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
-from fastapi import HTTPException, status
+from fastapi import HTTPException,
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from models.models import User, AllegroAccount
-from utils.security import encrypt_data, decrypt_data
+from utils.security import encrypt_data,
 from config import settings
 
 
@@ -37,14 +35,13 @@ class AllegroService:
                 response.raise_for_status()
                 token_data = response.json()
                 if 'access_token' not in token_data:
-                    raise HTTPException(status_code=400, detail="Allegro не вернул 'access_token'.")
+                    raise HTTPException(status_code=400, detail="Allegro nie zwróciło 'access_token'.")
                 return token_data
             except httpx.HTTPStatusError as e:
                 raise HTTPException(status_code=400, detail=f"HTTP Ошибка от Allegro: {e.response.text}")
 
-    # --- НОВЫЙ МЕТОД ДЛЯ ОБНОВЛЕНИЯ ТОКЕНА ---
+    # ---  МЕТОД ДЛЯ ОБНОВЛЕНИЯ ТОКЕНА ---
     async def refresh_tokens(self, refresh_token: str) -> dict | None:
-        """Обновляет access и refresh токены, используя старый refresh_token."""
         auth_header = httpx.BasicAuth(self.client_id, self.client_secret)
         data = {
             "grant_type": "refresh_token",
@@ -56,7 +53,11 @@ class AllegroService:
                 response.raise_for_status()
                 return response.json()
         except httpx.HTTPStatusError as e:
-            print(f"Не удалось обновить токен Allegro: {e.response.text}")
+            logger.error(
+                "Не удалось обновить токен Allegro через refresh_token",
+                status_code=e.response.status_code,
+                response_text=e.response.text
+            )
             return None
 
     async def get_allegro_user_details(self, access_token: str) -> dict:
@@ -64,17 +65,17 @@ class AllegroService:
         async with httpx.AsyncClient() as client:
             response = await client.get(f"{self.api_url}/me", headers=headers)
         if response.status_code != 200:
-            raise HTTPException(status_code=400, detail="Не удалось получить данные пользователя Allegro.")
+            raise HTTPException(status_code=400, detail="Nie udało się pobrać danych użytkownika Allegro.")
         return response.json()
 
     async def create_or_update_account(self, db: AsyncSession, user: User, allegro_data: dict, token_data: dict):
         allegro_user_id = allegro_data.get('id')
         if not allegro_user_id:
-            raise HTTPException(status_code=400, detail="Ответ от Allegro не содержит 'id' пользователя.")
+            raise HTTPException(status_code=400, detail="Odpowiedź z Allegro nie zawiera 'id' użytkownika.")
 
         access_token = token_data.get('access_token')
         if not access_token:
-            raise HTTPException(status_code=400, detail="Ответ от Allegro не содержит 'access_token'.")
+            raise HTTPException(status_code=400, detail="Odpowiedź z Allegro nie zawiera 'access_token'.")
 
         refresh_token = token_data.get('refresh_token', '')
         expires_in = token_data.get('expires_in', 3600)

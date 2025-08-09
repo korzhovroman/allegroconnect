@@ -22,7 +22,6 @@ class AllegroAccountResponse(BaseModel):
     class Config:
         from_attributes = True
 
-
 class UserResponse(UserBase):
     id: int
     created_at: datetime
@@ -34,7 +33,7 @@ class UserResponse(UserBase):
 
 class Token(BaseModel):
     access_token: str
-    token_type: str = "bearer"  # Исправлена кавычка
+    token_type: str = "bearer"
 
 class TokenData(BaseModel):
     user_id: Optional[int] = None

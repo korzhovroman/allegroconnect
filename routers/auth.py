@@ -26,11 +26,7 @@ async def sync_supabase_user(
         db: AsyncSession = Depends(get_db),
         token_payload: TokenPayload = Depends(get_token_payload)
 ):
-    """
-    Безопасная синхронизация. supabase_user_id - главный ключ.
-    Предотвращает захват аккаунта через старый email.
-    При создании нового пользователя автоматически создает для него команду.
-    """
+
     if not token_payload.sub or not token_payload.email:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -87,7 +83,6 @@ async def sync_supabase_user(
 
     return APIResponse(data=new_user)
 
-
 @router.post("/register-fcm-token", response_model=APIResponse[dict], status_code=status.HTTP_200_OK)
 @limiter.limit("20/minute")
 async def register_fcm_token(
@@ -96,7 +91,6 @@ async def register_fcm_token(
         db: AsyncSession = Depends(get_db),
         current_user: User = Depends(get_current_user)
 ):
-    """Сохраняет или обновляет FCM токен для текущего пользователя."""
     current_user.fcm_token = payload.token
     await db.commit()
     return APIResponse(data={"status": "success"})
@@ -109,10 +103,7 @@ async def get_my_subscription_status(
         current_user: User = Depends(get_current_user),
         db: AsyncSession = Depends(get_db)
 ):
-    """
-    Возвращает информацию о текущей подписке пользователя,
-    количестве используемых аккаунтов и доступных лимитах.
-    """
+
     status_val = current_user.subscription_status
     ends_at = current_user.subscription_ends_at
 
@@ -120,7 +111,6 @@ async def get_my_subscription_status(
     used_accounts = await count_user_allegro_accounts(db, current_user.id)
 
     limit = settings.SUB_LIMITS.get(status_val, 0)
-
 
     subscription_data = {
         "status": status_val,

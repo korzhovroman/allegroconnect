@@ -20,7 +20,6 @@ from utils.rate_limiter import limiter
 from fastapi_csrf_protect import CsrfProtect
 from fastapi_csrf_protect.exceptions import CsrfProtectError
 
-# Настройка логирования
 structlog.configure(
     processors=[
         structlog.contextvars.merge_contextvars,
@@ -32,10 +31,8 @@ structlog.configure(
     context_class=dict,
     logger_factory=structlog.PrintLoggerFactory(),
 )
-# Привязываем стандартный логгер к structlog
 logger = structlog.get_logger()
 
-# Асинхронная сессия для фоновых задач
 engine = create_async_engine(settings.DATABASE_URL)
 AsyncSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, class_=AsyncSession)
 scheduler = AsyncIOScheduler()
@@ -48,10 +45,6 @@ def get_csrf_config():
     return CsrfSettings(secret_key=settings.CSRF_SECRET_KEY)
 
 async def run_task_producer():
-    """
-    Функция-ПРОИЗВОДИТЕЛЬ. Быстро получает ID всех аккаунтов
-    и добавляет их в очередь задач.
-    """
     logger.info("Планировщик запускает задачу 'Производителя'...")
     db_session = AsyncSessionLocal()
     try:
@@ -80,7 +73,6 @@ async def run_task_producer():
 
 
 async def run_cleanup_task():
-    """Функция-обертка для запуска сервиса очистки логов."""
     logger.info("Планировщик запускает задачу очистки логов...")
     db_session = AsyncSessionLocal()
     try:
@@ -91,9 +83,7 @@ async def run_cleanup_task():
     finally:
         await db_session.close()
 
-
 async def run_cleanup_metadata_task():
-    """Функция-обертка для запуска очистки метаданных сообщений."""
     logger.info("Планировщик запускает задачу очистки метаданных...")
     db_session = AsyncSessionLocal()
     try:
@@ -107,24 +97,19 @@ async def run_cleanup_metadata_task():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # ДОБАВИТЬ: Создание таблиц при старте
     from models.database import create_tables
-    from models import models  # Импортируем модели для регистрации
     await create_tables()
 
-    # Запуск при старте приложения
     scheduler.add_job(run_task_producer, 'interval', minutes=5, id="task_producer_job")
     scheduler.add_job(run_cleanup_task, 'cron', hour=3, minute=0, id="cleanup_job")
     scheduler.add_job(run_cleanup_metadata_task, 'cron', hour=3, minute=30, id="cleanup_metadata_job")
     scheduler.start()
     logger.info("Планировщик задач запущен")
     yield
-    # Остановка при завершении приложения
     scheduler.shutdown()
     logger.info("Планировщик задач остановлен")
 
 
-# Создание приложения
 app = FastAPI(
     title="Allegro Connect API",
     version="1.0.0",
@@ -133,16 +118,14 @@ app = FastAPI(
     redoc_url="/redoc" if settings.DEBUG else None
 )
 
-# Подключение Rate limiter'а
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# Безопасность: HTTPS redirect в production
+
 if not settings.DEBUG:
     from starlette.middleware.httpsredirect import HTTPSRedirectMiddleware
     app.add_middleware(HTTPSRedirectMiddleware)
 
-# Безопасные CORS настройки
 allowed_origins = []
 if settings.FRONTEND_URL:
     allowed_origins.append(settings.FRONTEND_URL)
@@ -158,21 +141,17 @@ app.add_middleware(
 )
 
 
-# Глобальный обработчик ошибок
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    # ИЗМЕНЕНО: Более безопасное логирование.
-    # Мы логируем тип ошибки и ее сообщение, но избегаем полного exc_info в продакшене,
-    # чтобы случайно не записать в логи конфиденциальные данные.
+
     logger.error(
         "Unhandled exception",
         error_type=type(exc).__name__,
         error_message=str(exc),
         method=str(request.method),
         url=str(request.url),
-        exc_info=settings.DEBUG  # Включаем полный traceback только в режиме DEBUG
+        exc_info=settings.DEBUG
     )
-    # Возвращаем стандартизированный ответ об ошибке
     return JSONResponse(
         status_code=500,
         content=APIResponse(
@@ -204,7 +183,6 @@ async def http_exception_handler(request: Request, exc: HTTPException):
         ).model_dump()
     )
 
-# Подключение роутеров
 app.include_router(auth.router)
 app.include_router(allegro.router)
 app.include_router(conversations.router)

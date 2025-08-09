@@ -1,11 +1,9 @@
 # services/allegro_client.py
-
 import httpx
 from datetime import datetime, timezone, timedelta
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from contextlib import asynccontextmanager
-
 from utils.security import decrypt_data, encrypt_data
 from models.models import AllegroAccount
 from config import settings
@@ -15,24 +13,13 @@ ALLEGRO_API_URL = "https://api.allegro.pl"
 
 
 class AllegroClient:
-    """
-    Асинхронный клиент для взаимодействия с Allegro REST API.
-    Этот клиент инкапсулирует логику аутентификации, автоматического
-    обновления токенов и выполнения запросов.
-    """
-
     def __init__(self, db: AsyncSession, allegro_account: AllegroAccount):
         self.db = db
         self.allegro_account = allegro_account
-        # Мы не создаем httpx.AsyncClient здесь, чтобы избежать утечек ресурсов.
-        # Вместо этого мы будем использовать его как контекстный менеджер.
 
     @asynccontextmanager
     async def _get_http_client(self) -> httpx.AsyncClient:
-        """
-        Приватный контекстный менеджер для управления жизненным циклом httpx.AsyncClient.
-        Гарантирует, что клиент всегда будет закрыт после использования.
-        """
+
         access_token = decrypt_data(self.allegro_account.access_token)
         headers = {
             "Authorization": f"Bearer {access_token}",
@@ -43,45 +30,44 @@ class AllegroClient:
             yield client
 
     async def _request(self, method: str, url: str, is_retry: bool = False, **kwargs):
-        """
-        Основной метод для выполнения запросов к API.
-        Обрабатывает ошибки, включая истечение срока действия токена.
-        """
+
         try:
             async with self._get_http_client() as client:
                 response = await client.request(method, url, **kwargs)
                 response.raise_for_status()
-                # Для методов без тела ответа (201, 202, 204)
                 return response.json() if response.content else {}
         except httpx.HTTPStatusError as e:
-            # Если токен истек (401) и это первая попытка запроса
             if e.response.status_code == status.HTTP_401_UNAUTHORIZED and not is_retry:
-                print(f"Токен для аккаунта {self.allegro_account.allegro_login} истек. Пытаемся обновить...")
+                logger.info(
+                    "Токен Allegro истек, попытка обновления.",
+                    account_login=self.allegro_account.allegro_login
+                )
                 refreshed = await self._refresh_and_save_tokens()
                 if refreshed:
-                    # Повторяем изначальный запрос с флагом is_retry=True
                     return await self._request(method, url, is_retry=True, **kwargs)
-            # Если обновить не удалось или ошибка другая, логируем и пробрасываем ее дальше
             error_details = e.response.text
-            print(f"Ошибка от API Allegro для {e.request.url}: {error_details}")
+            logger.error(
+                "Ошибка от API Allegro",
+                url=str(e.request.url),
+                status_code=e.response.status_code,
+                details=error_details
+            )
             raise HTTPException(
                 status_code=e.response.status_code,
                 detail=f"Error from Allegro API: {error_details}"
             )
         except httpx.RequestError as e:
-            # Обработка сетевых ошибок
-            print(f"Сетевая ошибка при запросе к Allegro API: {e}")
+            logger.error(
+                "Сетевая ошибка при запросе к Allegro API",
+                url=str(e.request.url),
+                error=str(e)
+            )
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Could not connect to Allegro API."
             )
 
     async def _refresh_and_save_tokens(self) -> bool:
-        """
-        Внутренний метод для обновления и сохранения токенов в БД.
-        Важно: этот метод не делает commit. Коммит должен управляться
-        на уровне эндпоинта, чтобы обеспечить атомарность транзакции.
-        """
         service = AllegroService(
             client_id=settings.ALLEGRO_CLIENT_ID,
             client_secret=settings.ALLEGRO_CLIENT_SECRET,
@@ -92,25 +78,25 @@ class AllegroClient:
         new_token_data = await service.refresh_tokens(decrypted_refresh_token)
 
         if not new_token_data or 'access_token' not in new_token_data:
-            print(f"Критическая ошибка: не удалось обновить токен для аккаунта {self.allegro_account.id}")
+            logger.critical(
+                "Не удалось обновить токен Allegro, отсутствует access_token.",
+                account_id=self.allegro_account.id
+            )
             return False
 
-        # Обновляем данные в объекте SQLAlchemy
         self.allegro_account.access_token = encrypt_data(new_token_data['access_token'])
         self.allegro_account.refresh_token = encrypt_data(new_token_data['refresh_token'])
         expires_in = new_token_data.get('expires_in', 3600)
         self.allegro_account.expires_at = datetime.now(timezone.utc) + timedelta(seconds=int(expires_in))
 
-        # Не делаем commit здесь! Сессия будет закоммичена в вызывающем коде (в роутере).
-        # Это позволяет включить обновление токена в одну транзакцию с другими операциями.
         self.db.add(self.allegro_account)
-        await self.db.flush()  # Применяем изменения к сессии, чтобы они были доступны, но не коммитим.
+        await self.db.flush()
 
-        print(f"Токен для аккаунта {self.allegro_account.allegro_login} успешно обновлен в сессии.")
+        logger.info(
+            "Токен Allegro успешно обновлен в сессии.",
+            account_login=self.allegro_account.allegro_login
+        )
         return True
-
-    # --- Методы для работы с API Allegro ---
-    # Все они используют _request, который обеспечивает безопасное выполнение запросов.
 
     async def get_threads(self, limit: int = 20, offset: int = 0):
         """Получает список диалогов (threads)."""

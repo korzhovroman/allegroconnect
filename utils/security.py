@@ -4,7 +4,6 @@ from passlib.context import CryptContext
 from config import settings
 
 # --- Хеширование паролей ---
-# Создаем контекст passlib для хеширования
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -22,8 +21,6 @@ def safe_compare(a: str, b: str) -> bool:
     return hmac.compare_digest(a.encode('utf-8'), b.encode('utf-8'))
 
 # --- Шифрование данных (для токенов Allegro) ---
-# 2. Инициализируем Fernet с ключом из настроек
-# Проверка на наличие ключа уже происходит в config.py, здесь она не нужна
 fernet = Fernet(settings.ENCRYPTION_KEY.encode())
 
 def encrypt_data(data: str) -> str:

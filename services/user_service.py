@@ -2,9 +2,7 @@
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy.orm import selectinload
 from fastapi import HTTPException, status
-
 from models.models import User
 from schemas.user import UserCreate
 from utils.security import hash_password, verify_password
@@ -25,13 +23,11 @@ class UserService:
         return result.scalar_one_or_none()
 
     async def create_user(self, db: AsyncSession, user_data: UserCreate) -> User:
-        """Асинхронно создает нового пользователя."""
-        # 3. Используем собственный метод для проверки (принцип DRY)
         existing_user = await self.get_user_by_email(db, user_data.email)
         if existing_user:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Пользователь с таким email уже существует."
+                detail="Użytkownik o takim adresie e-mail już istnieje."
             )
 
         hashed_pass = hash_password(user_data.password)
@@ -43,13 +39,10 @@ class UserService:
         return new_user
 
     async def authenticate_user(self, db: AsyncSession, email: str, password: str) -> User | None:
-        """
-        Асинхронно аутентифицирует пользователя.
-        Возвращает объект User в случае успеха или None в случае неудачи.
-        """
+
         user = await self.get_user_by_email(db, email)
 
         if not user or not verify_password(password, user.hashed_password):
-            return None  # Просто возвращаем None, без ошибки
+            return None
 
         return user

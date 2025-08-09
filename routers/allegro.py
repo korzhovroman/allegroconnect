@@ -25,12 +25,10 @@ def get_allegro_service() -> AllegroService:
         auth_url=settings.ALLEGRO_AUTH_URL
     )
 
-
 async def count_user_allegro_accounts(db: AsyncSession, user_id: int) -> int:
     query = select(func.count(AllegroAccount.id)).where(AllegroAccount.owner_id == user_id)
     result = await db.execute(query)
     return result.scalar_one()
-
 
 async def get_user_allegro_accounts(db: AsyncSession, user_id: int) -> List[AllegroAccount]:
     query = select(AllegroAccount).where(AllegroAccount.owner_id == user_id)
@@ -87,7 +85,7 @@ async def allegro_auth_callback(
             if limit != -1:  # -1 означает безлимит
                 current_accounts_count = await count_user_allegro_accounts(db, user_id=user.id)
                 if current_accounts_count >= limit:
-                    error_message = f"Достигнут лимит в {limit} аккаунт(а) для вашего тарифа '{current_status}'."
+                    error_message = f"Osiągnięto limit {limit} kont dla Twojego planu taryfowego '{current_status}'."
                     error_params = urlencode({"error": error_message})
                     return RedirectResponse(url=f"{redirect_url}?{error_params}")
 
@@ -101,7 +99,8 @@ async def allegro_auth_callback(
     except Exception as e:
         from main import logger
         logger.error("Ошибка в коллбэке Allegro", error=str(e), exc_info=True)
-        params = urlencode({"error": "Произошла внутренняя ошибка сервера."})
+        error_message = "Wystąpił wewnętrzny błąd serwera."
+        params = urlencode({"error": error_message})
         return RedirectResponse(url=f"{redirect_url}?{params}")
 
 @router.get("/accounts", response_model=APIResponse[List[AllegroAccountOut]])

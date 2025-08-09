@@ -1,12 +1,10 @@
 # config.py
-
 import os
 from pathlib import Path
 from typing import Dict
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from cryptography.fernet import Fernet
 
-# Определяем путь к корневой папке проекта
 ROOT_DIR = Path(__file__).parent.resolve()
 
 
@@ -48,9 +46,7 @@ class Settings(BaseSettings):
         "canceled": -1  # Для отмененных подписок тоже сохраняем лимит до конца периода
     }
 
-# Создаем единственный экземпляр настроек
 settings = Settings()
-
 
 def model_post_init(self, __context):
     """Проверяем формат ключей после инициализации"""

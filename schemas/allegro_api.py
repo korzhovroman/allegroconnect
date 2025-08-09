@@ -25,7 +25,6 @@ class AllegroMessageAuthor(BaseModel):
 class AllegroMessage(BaseModel):
     id: str
     author: AllegroMessageAuthor
-    # Добавьте другие поля по необходимости
 
 class MessagesResponse(BaseModel):
     messages: List[AllegroMessage]

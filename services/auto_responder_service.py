@@ -3,13 +3,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 from datetime import datetime, timedelta, timezone
 from pydantic import ValidationError
-
 from models.models import AllegroAccount, AutoReplyLog, User, MessageMetadata
 from services.allegro_client import AllegroClient
 from services.notification_service import send_notification
 from schemas.allegro_api import ThreadsResponse, MessagesResponse, AllegroThread
 from main import logger
-
 
 class AutoResponderService:
     def __init__(self, db: AsyncSession):
@@ -46,9 +44,9 @@ class AutoResponderService:
                     logger.info(f"Обнаружен новый непрочитанный диалог", thread_id=thread.id)
                     if fcm_token:
                         try:
-                            interlocutor = thread.interlocutor.login if thread.interlocutor else 'Покупатель'
-                            title = f"Новое сообщение от {interlocutor}"
-                            body = f"Аккаунт: {account_login}. Нажмите, чтобы ответить."
+                            interlocutor = thread.interlocutor.login if thread.interlocutor else 'Kupujący'
+                            title = f"Nowa wiadomość od {interlocutor}"
+                            body = f"Konto: {account_login}. Kliknij, aby odpowiedzieć."
                             send_notification(token=fcm_token, title=title, body=body)
                         except Exception as e:
                             logger.error(f"Ошибка при отправке PUSH-уведомления", error=str(e))

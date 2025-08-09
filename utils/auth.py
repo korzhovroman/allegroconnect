@@ -1,9 +1,7 @@
 # utils/auth.py
-
 from datetime import datetime, timedelta, timezone
 from jose import JWTError, jwt
-from fastapi import HTTPException, status
-
+from fastapi import HTTPException
 from config import settings
 from schemas.token import TokenPayload
 
@@ -31,35 +29,27 @@ def verify_state_token(token: str) -> int | None:
     except (JWTError, ValueError, TypeError):
         return None
 
-# ИЗМЕНЕНА ФУНКЦИЯ
 def verify_token(token: str, credentials_exception: HTTPException) -> TokenPayload:
     """
     Декодирует и ВАЛИДИРУЕТ токен от Supabase.
     Добавлены критические проверки 'iss' и 'aud'.
     """
     try:
-        # Используем секрет от Supabase для декодирования
         payload = jwt.decode(
             token,
             settings.SUPABASE_JWT_SECRET,
             algorithms=[settings.ALGORITHM],
-            # Проверяем, что токен предназначен для аутентифицированных пользователей
             audience="authenticated"
         )
 
-        # --- КРИТИЧЕСКИ ВАЖНЫЕ ПРОВЕРКИ ---
-        # 1. Проверка издателя (issuer)
-        # Убеждаемся, что токен выдан именно нашим инстансом Supabase
         expected_issuer = f"{settings.SUPABASE_URL}/auth/v1"
         if payload.get("iss") != expected_issuer:
             raise credentials_exception
 
-        # 2. Проверка 'sub' (ID пользователя)
         user_id = payload.get("sub")
         if user_id is None:
             raise credentials_exception
 
-        # 3. Извлекаем email
         email = payload.get("email")
         if email is None:
             raise credentials_exception
@@ -67,6 +57,5 @@ def verify_token(token: str, credentials_exception: HTTPException) -> TokenPaylo
         token_data = TokenPayload(sub=user_id, email=email)
 
     except (JWTError, ValueError):
-        # Если токен невалиден, истек или имеет неверную структуру
         raise credentials_exception
     return token_data
