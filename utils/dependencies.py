@@ -1,5 +1,5 @@
 # utils/dependencies.py
-from fastapi import Depends, HTTPException, status, Request
+from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -12,25 +12,9 @@ from schemas.token import TokenPayload
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/sync-user")
 
-
 def get_user_service():
     from services.user_service import UserService
     return UserService()
-
-
-def plan_checker(allowed_plans: List[str]):
-    async def check_subscription(current_user: User = Depends(get_current_user)) -> User:
-        if current_user.subscription_status not in allowed_plans:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"This feature is only available for the following plans: {', '.join(allowed_plans)}."
-            )
-        return current_user
-    return check_subscription
-
-
-require_pro_plan = plan_checker(["pro", "maxi", "trial"])
-require_maxi_plan = plan_checker(["maxi", "trial"])
 
 async def get_current_user(
         token: str = Depends(oauth2_scheme),
@@ -49,6 +33,19 @@ async def get_current_user(
         raise credentials_exception
     return user
 
+def plan_checker(allowed_plans: List[str]):
+    async def check_subscription(current_user: User = Depends(get_current_user)) -> User:
+        if current_user.subscription_status not in allowed_plans:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"This feature is only available for the following plans: {', '.join(allowed_plans)}."
+            )
+        return current_user
+    return check_subscription
+
+
+require_pro_plan = plan_checker(["pro", "maxi", "trial"])
+require_maxi_plan = plan_checker(["maxi", "trial"])
 
 @alru_cache(maxsize=1024, ttl=300)
 async def _check_permission_in_db(db: AsyncSession, user_id: int, allegro_account_id: int) -> bool:
