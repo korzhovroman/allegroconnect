@@ -14,7 +14,10 @@ print(f"WORKER SEES DATABASE_URL: {os.getenv('DATABASE_URL')}")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - WORKER - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-engine = create_async_engine(settings.DATABASE_URL)
+engine = create_async_engine(
+    settings.DATABASE_URL,
+    connect_args={"statement_cache_size": 0}  # <--- И ДОБАВЬТЕ ЭТУ СТРОКУ ЗДЕСЬ
+)
 AsyncSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, class_=AsyncSession)
 
 shutdown_event = asyncio.Event()
