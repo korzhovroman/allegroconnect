@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 engine = create_async_engine(
     settings.DATABASE_URL,
-    connect_args={"statement_cache_size": 0}  # <--- И ДОБАВЬТЕ ЭТУ СТРОКУ ЗДЕСЬ
+    connect_args={"statement_cache_size": 0}
 )
 AsyncSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, class_=AsyncSession)
 
