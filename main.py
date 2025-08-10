@@ -119,9 +119,10 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
     docs_url="/docs" if settings.DEBUG else None,
-    redoc_url="/redoc" if settings.DEBUG else None
-)
-
+    redoc_url="/redoc" if settings.DEBUG else None,
+    proxy_headers = True,
+    forwarded_allow_ips = '*'
+    )
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
