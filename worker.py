@@ -3,8 +3,6 @@ import asyncio
 import logging
 import signal
 import os
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker
 from sqlalchemy import text
 from config import settings
 from services.auto_responder_service import AutoResponderService
@@ -21,7 +19,7 @@ def handle_shutdown_signal(sig, frame):
     logger.info(f"Получен сигнал {sig}. Инициирую вежливое завершение...")
     shutdown_event.set()
 
-async def get_next_task(db: AsyncSession):
+async def get_next_task(db):
     stmt = text("""
         UPDATE task_queue 
         SET status = 'processing', processed_at = NOW()
