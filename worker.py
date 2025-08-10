@@ -82,7 +82,7 @@ async def main_loop():
                         pass
 
                 except Exception as e:
-                    logger.error(f"Критическая ошибка при обработке задачи. Откатываем транзакцию.", error=str(e), exc_info=True)
+                    logger.error(f"Критическая ошибка при обработке задачи. Откатываем транзакцию.", details=str(e), exc_info=True)
                     if 'task_id' in locals():
                         await db.execute(
                             text("UPDATE task_queue SET status = 'failed' WHERE id = :id"),

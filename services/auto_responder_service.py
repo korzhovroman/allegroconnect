@@ -36,7 +36,7 @@ class AutoResponderService:
             try:
                 threads_response = ThreadsResponse.model_validate(raw_threads_data)
             except ValidationError as e:
-                logger.error(f"Ошибка валидации ответа Allegro (threads)", error=e, account_id=account_id)
+                logger.error(f"Ошибка валидации ответа Allegro (threads)", details=str(e), account_id=account_id)
                 return
 
             for thread in threads_response.threads:
@@ -49,14 +49,14 @@ class AutoResponderService:
                             body = f"Konto: {account_login}. Kliknij, aby odpowiedzieć."
                             send_notification(token=fcm_token, title=title, body=body)
                         except Exception as e:
-                            logger.error(f"Ошибка при отправке PUSH-уведомления", error=str(e))
+                            logger.error(f"Ошибка при отправке PUSH-уведомления", details=str(e))
                     if auto_reply_enabled and reply_text:
                         logger.info(f"Автоответчик включен. Отправляем ответ.", thread_id=thread.id)
                         await client.post_thread_message(thread.id, reply_text)
                     await self._log_conversation_as_processed(thread.id, account_id)
                     logger.info(f"Диалог помечен как обработанный.", thread_id=thread.id)
         except Exception as e:
-            logger.error(f"Критическая ошибка при обработке аккаунта {account_login}", error=str(e), exc_info=True)
+            logger.error(f"Критическая ошибка при обработке аккаунта {account_login}", details=str(e), exc_info=True)
             raise e
 
     async def _is_new_message_from_buyer(self, client: AllegroClient, thread: AllegroThread, account_id: int) -> bool:
@@ -70,7 +70,7 @@ class AutoResponderService:
             try:
                 messages_response = MessagesResponse.model_validate(raw_messages_data)
             except ValidationError as e:
-                logger.error("Ошибка валидации ответа Allegro (messages)", thread_id=thread_id, error=str(e))
+                logger.error("Ошибка валидации ответа Allegro (messages)", thread_id=thread_id, details=str(e))
                 return False
 
             if not messages_response.messages:
@@ -80,7 +80,7 @@ class AutoResponderService:
             if last_message.author.role != 'SELLER':
                 return True
         except Exception as e:
-            logger.error("Не удалось проверить сообщения для диалога", thread_id=thread_id, error=str(e))
+            logger.error("Не удалось проверить сообщения для диалога", thread_id=thread_id, details=str(e))
             return False
         return False
 
@@ -96,7 +96,7 @@ class AutoResponderService:
             await self.db.commit()
             logger.info("Очистка логов автоответчика завершена", deleted_rows=result.rowcount)
         except Exception as e:
-            logger.error("ОШИБКА во время очистки логов автоответчика:", error=str(e))
+            logger.error("ОШИБКА во время очистки логов автоответчика:", details=str(e))
             await self.db.rollback()
 
     async def cleanup_old_message_metadata(self):
@@ -108,5 +108,5 @@ class AutoResponderService:
             await self.db.commit()
             logger.info("Очистка метаданных сообщений завершена", deleted_rows=result.rowcount)
         except Exception as e:
-            logger.error("ОШИБКА во время очистки метаданных сообщений", error=str(e))
+            logger.error("ОШИБКА во время очистки метаданных сообщений", details=str(e))
             await self.db.rollback()

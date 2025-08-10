@@ -11,6 +11,7 @@ from datetime import datetime
 from pydantic import BaseModel
 from schemas.allegro import AllegroAccountSettingsUpdate, AllegroAccountOut
 from utils.rate_limiter import limiter
+from utils.logger import logger
 
 class AttachmentDeclare(BaseModel):
     file_name: str
@@ -73,7 +74,7 @@ async def get_all_conversations(
                 "interlocutor": thread.get('interlocutor')
             })
     except Exception as e:
-        logger.error("Ошибка получения threads", error=str(e))
+        logger.error("Ошибка получения threads", details=str(e))
         errors.append("Could not fetch regular messages.")
 
     try:
@@ -87,7 +88,7 @@ async def get_all_conversations(
                 "subject": issue.get('subject')
             })
     except Exception as e:
-        logger.error("Ошибка получения issues", error=str(e))
+        logger.error("Ошибка получения issues", details=str(e))
         errors.append("Could not fetch discussions and claims (Allegro internal error).")
 
     all_conversations.sort(
