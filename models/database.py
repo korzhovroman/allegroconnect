@@ -23,6 +23,7 @@ AsyncSessionLocal = sessionmaker(
 Base = declarative_base()
 
 async def create_tables():
+    """Создает все таблицы в БД. Вызывать при старте приложения."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
