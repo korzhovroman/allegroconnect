@@ -4,16 +4,20 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy.pool import NullPool
 from typing import AsyncGenerator
 from config import settings
+from utils.logger import logger
 
 engine = create_async_engine(
     settings.DATABASE_URL,
-    echo=settings.DEBUG,
+    echo=False,
     poolclass=NullPool,
     connect_args={
         "statement_cache_size": 0,
-        "prepared_statement_cache_size": 0
+        "prepared_statement_cache_size": 0,
+        "command_timeout": 30
     }
 )
+
+logger.info(f"Database engine created successfully")
 
 AsyncSessionLocal = sessionmaker(
     bind=engine,
