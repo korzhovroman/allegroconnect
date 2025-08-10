@@ -20,6 +20,7 @@ from utils.rate_limiter import limiter
 from fastapi_csrf_protect import CsrfProtect
 from fastapi_csrf_protect.exceptions import CsrfProtectError
 from pydantic import BaseModel
+from models.database import AsyncSessionLocal
 
 structlog.configure(
     processors=[
@@ -34,8 +35,6 @@ structlog.configure(
 )
 logger = structlog.get_logger()
 
-engine = create_async_engine(settings.DATABASE_URL)
-AsyncSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, class_=AsyncSession)
 scheduler = AsyncIOScheduler()
 
 class CsrfSettings(BaseModel):
