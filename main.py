@@ -49,7 +49,13 @@ async def run_task_producer():
     db_session = AsyncSessionLocal()
     try:
         result = await db_session.execute(text("SELECT id FROM allegro_accounts;"))
-        account_ids = result.scalars().all()
+        account_ids = []
+        for raw_id in result.scalars().all():
+            try:
+                account_ids.append(int(raw_id))
+            except (ValueError, TypeError):
+                logger.warning(f"Не удалось преобразовать ID аккаунта в число: {raw_id}. Пропускаем.")
+                continue
 
         if not account_ids:
             logger.info("Нет аккаунтов для обработки.")
