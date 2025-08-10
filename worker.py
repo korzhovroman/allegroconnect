@@ -18,6 +18,7 @@ engine = create_async_engine(
     settings.DATABASE_URL,
     connect_args={"statement_cache_size": 0}
 )
+
 AsyncSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, class_=AsyncSession)
 
 shutdown_event = asyncio.Event()
