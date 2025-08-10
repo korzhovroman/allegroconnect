@@ -9,8 +9,6 @@ from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker
 from schemas.api import APIResponse
 from sqlalchemy import text
 from routers import auth, allegro, conversations, webhooks, teams
