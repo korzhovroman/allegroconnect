@@ -127,9 +127,9 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
-if not settings.DEBUG:
-    from starlette.middleware.httpsredirect import HTTPSRedirectMiddleware
-    app.add_middleware(HTTPSRedirectMiddleware)
+# if not settings.DEBUG:
+#     from starlette.middleware.httpsredirect import HTTPSRedirectMiddleware
+#     app.add_middleware(HTTPSRedirectMiddleware)
 
 allowed_origins = []
 if settings.FRONTEND_URL:
