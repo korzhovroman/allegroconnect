@@ -98,7 +98,7 @@ async def run_cleanup_metadata_task():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from models.database import create_tables
-    await create_tables()
+    #await create_tables()
 
     scheduler.add_job(run_task_producer, 'interval', minutes=5, id="task_producer_job")
     scheduler.add_job(run_cleanup_task, 'cron', hour=3, minute=0, id="cleanup_job")
