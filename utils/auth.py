@@ -2,8 +2,10 @@
 from datetime import datetime, timedelta, timezone
 from jose import JWTError, jwt
 from fastapi import HTTPException
+
 from config import settings
 from schemas.token import TokenPayload
+from utils.logger import logger  # Этот импорт сработает на сервере
 
 
 def create_access_token(data: dict) -> str:
@@ -44,6 +46,7 @@ def verify_token(token: str, credentials_exception: HTTPException) -> TokenPaylo
 
         expected_issuer = f"{settings.SUPABASE_URL}/auth/v1"
         if payload.get("iss") != expected_issuer:
+            logger.error(f"JWT Issuer mismatch. Expected: {expected_issuer}, Got: {payload.get('iss')}")
             raise credentials_exception
 
         user_id = payload.get("sub")
@@ -56,6 +59,9 @@ def verify_token(token: str, credentials_exception: HTTPException) -> TokenPaylo
 
         token_data = TokenPayload(sub=user_id, email=email)
 
-    except (JWTError, ValueError):
+    except JWTError as e:
+        logger.error(f"Ошибка верификации JWT: {e}", exc_info=True)
+        raise credentials_exception
+    except (ValueError):
         raise credentials_exception
     return token_data
