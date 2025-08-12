@@ -41,6 +41,7 @@ async def get_user_allegro_accounts(db: AsyncSession, user_id: int) -> List[Alle
 @router.get("/auth/url", response_model=APIResponse[dict])
 @limiter.limit("20/minute")
 async def get_allegro_auth_url(
+        request: Request,
         current_user: User = Depends(get_current_user_from_db),
         allegro_service: AllegroService = Depends(get_allegro_service),
 ):
@@ -52,6 +53,7 @@ async def get_allegro_auth_url(
 @router.get("/auth/callback")
 @limiter.limit("20/minute")
 async def allegro_auth_callback(
+        request: Request,
         code: str = Query(...),
         state: str = Query(...),
         db: AsyncSession = Depends(get_db),
