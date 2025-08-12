@@ -1,22 +1,21 @@
 # routers/teams.py
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete, func
 from sqlalchemy.orm import selectinload, joinedload
 from supabase import create_client, Client
 from typing import List
-from utils.dependencies import require_maxi_plan
+from utils.dependencies import require_maxi_plan, get_current_user_from_db
 from config import settings
 from models.database import get_db
-from models.models import User, Team, TeamMember, EmployeePermission, AllegroAccount
+from models.models import User, TeamMember, EmployeePermission, AllegroAccount
 from schemas.api import APIResponse
 from utils.logger import logger
 
 supabase_admin: Client = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_KEY)
 
 router = APIRouter(prefix="/api/teams", tags=["Teams"])
-
 
 class EmployeeInvite(BaseModel):
     email: EmailStr
@@ -40,8 +39,9 @@ class TeamMemberOut(BaseModel):
 @router.get("/members", response_model=APIResponse[List[TeamMemberOut]],
             summary="Получить список всех участников команды")
 async def get_team_members(
-        db: AsyncSession = Depends(get_db),
-        current_user: User = Depends(require_maxi_plan)
+        _: dict = Depends(require_maxi_plan),
+        current_user: User = Depends(get_current_user_from_db),
+        db: AsyncSession = Depends(get_db)
 ):
     if not current_user.team_membership:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Nie należysz do żadnego zespołu.")
@@ -70,8 +70,9 @@ async def get_team_members(
              summary="Пригласить сотрудника в команду")
 async def invite_employee(
         payload: EmployeeInvite,
-        db: AsyncSession = Depends(get_db),
-        current_user: User = Depends(require_maxi_plan)
+        _: dict = Depends(require_maxi_plan),
+        current_user: User = Depends(get_current_user_from_db),
+        db: AsyncSession = Depends(get_db)
 ):
     if not current_user.owned_team:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
