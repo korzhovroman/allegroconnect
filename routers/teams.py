@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, func
 from sqlalchemy.orm import selectinload, joinedload
 from supabase import create_client, Client
 from typing import List
@@ -12,6 +12,7 @@ from models.database import get_db
 from models.models import User, Team, TeamMember, EmployeePermission, AllegroAccount
 from schemas.api import APIResponse
 from utils.logger import logger
+
 supabase_admin: Client = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_KEY)
 
 router = APIRouter(prefix="/api/teams", tags=["Teams"])
@@ -75,6 +76,13 @@ async def invite_employee(
     if not current_user.owned_team:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
                             detail="Tylko właściciel zespołu może zapraszać pracowników.")
+    count_query = select(func.count(TeamMember.id)).where(TeamMember.team_id == current_user.owned_team.id)
+    members_count = (await db.execute(count_query)).scalar_one()
+    if members_count >= settings.MAXI_EMPLOYEE_LIMIT:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Osiągnięto limit {settings.MAXI_EMPLOYEE_LIMIT} pracowników dla Twojego planu."
+        )
     try:
         response = supabase_admin.auth.admin.invite_user_by_email(payload.email)
         new_supabase_user = response.user

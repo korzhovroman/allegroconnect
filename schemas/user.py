@@ -39,12 +39,22 @@ class TeamResponse(BaseModel):
     class Config:
         from_attributes = True
 
+class ProfileUpdate(BaseModel):
+    company_name: Optional[str] = Field(None, max_length=255)
+    nip: Optional[str] = Field(None, max_length=50)
+    address: Optional[str] = Field(None, max_length=500)
+    phone_number: Optional[str] = Field(None, max_length=50)
+
 class UserResponse(UserBase):
     id: int
     created_at: datetime
     allegro_accounts: List[AllegroAccountResponse] = []
     owned_team: Optional[TeamResponse] = None
     team_membership: Optional[TeamMemberResponse] = None
+    company_name: Optional[str] = None
+    nip: Optional[str] = None
+    address: Optional[str] = None
+    phone_number: Optional[str] = None
 
     # И этот Config тоже должен быть ВНУТРИ
     class Config:

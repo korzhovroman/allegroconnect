@@ -45,7 +45,7 @@ class Settings(BaseSettings):
         "canceled": -1,  # Для отмененных подписок тоже сохраняем лимит до конца периода
         "expired": 0
     }
-
+    MAXI_EMPLOYEE_LIMIT: int = 10
 settings = Settings()
 
 def model_post_init(self, __context):

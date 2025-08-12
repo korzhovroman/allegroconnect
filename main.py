@@ -11,7 +11,7 @@ from slowapi.errors import RateLimitExceeded
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from schemas.api import APIResponse
 from sqlalchemy import text
-from routers import auth, allegro, conversations, webhooks, teams
+from routers import auth, allegro, conversations, webhooks, teams, users
 from services.auto_responder_service import AutoResponderService
 from config import settings
 from utils.rate_limiter import limiter
@@ -193,6 +193,7 @@ app.include_router(allegro.router)
 app.include_router(conversations.router)
 app.include_router(webhooks.router)
 app.include_router(teams.router)
+app.include_router(users.router)
 
 @app.get("/api/csrf-token", response_model=APIResponse[dict])
 def get_csrf_token(csrf_protect: CsrfProtect = Depends()):
