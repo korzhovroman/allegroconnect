@@ -21,11 +21,30 @@ class AllegroAccountResponse(BaseModel):
     # Config должен быть ВНУТРИ этого класса
     class Config:
         from_attributes = True
+class TeamMemberResponse(BaseModel):
+    id: int
+    user_id: int
+    team_id: int
+    role: str
+
+    class Config:
+        from_attributes = True
+
+class TeamResponse(BaseModel):
+    id: int
+    name: str
+    owner_id: int
+    members: List[TeamMemberResponse] = []
+
+    class Config:
+        from_attributes = True
 
 class UserResponse(UserBase):
     id: int
     created_at: datetime
     allegro_accounts: List[AllegroAccountResponse] = []
+    owned_team: Optional[TeamResponse] = None
+    team_membership: Optional[TeamMemberResponse] = None
 
     # И этот Config тоже должен быть ВНУТРИ
     class Config:

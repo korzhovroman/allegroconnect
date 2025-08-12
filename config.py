@@ -39,11 +39,11 @@ class Settings(BaseSettings):
     REVENUECAT_WEBHOOK_TOKEN: str
     # --- Лимиты подписок ---
     SUB_LIMITS: Dict[str, int] = {
-        "free": 1,
-        "trial": 1,
+        "trial": 10,
         "pro": 3,
         "maxi": -1,
-        "canceled": -1  # Для отмененных подписок тоже сохраняем лимит до конца периода
+        "canceled": -1,  # Для отмененных подписок тоже сохраняем лимит до конца периода
+        "expired": 0
     }
 
 settings = Settings()
